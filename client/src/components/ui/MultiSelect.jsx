@@ -85,7 +85,13 @@ export const MultiSelect = forwardRef(function MultiSelect(
         ref={anchorRef}
         type="button"
         disabled={disabled}
-        onClick={() => !disabled && !loading && setOpen((o) => !o)}
+        // BUGFIX: a Select/MultiSelect is often rendered inside a clickable
+        // row, card or tile. Letting the opening click bubble fired that
+        // ancestor handler too (navigate / open a modal / re-render), which
+        // tore the listbox down again right after it appeared.
+        onPointerDown={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
+        onClick={(e) => { e.stopPropagation(); if (!disabled && !loading) setOpen((o) => !o) }}
         onKeyDown={onKeyDown}
         aria-haspopup="listbox"
         aria-expanded={open}
@@ -135,6 +141,11 @@ export const MultiSelect = forwardRef(function MultiSelect(
             transition={{ duration: 0.14, ease: [0.22, 1, 0.36, 1] }}
             role="listbox"
             aria-multiselectable="true"
+            // The listbox is portalled into <body>, but React still bubbles its
+            // synthetic events to this component's React ancestors. Keep them in.
+            onPointerDown={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
             className="glass-strong fixed z-[60] flex w-max max-w-[min(22rem,calc(100vw-1rem))] flex-col overflow-hidden rounded-card p-1.5 shadow-floating"
           >
             {canSearch && (

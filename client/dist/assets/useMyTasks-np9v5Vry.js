@@ -1,0 +1,1 @@
+import{a as s}from"./vendor-query-D5P1htLs.js";import{u as a,K as n}from"./index-ayAO61cA.js";function r(){const{user:e}=a();return s({queryKey:["tasks","mine",e==null?void 0:e._id],queryFn:()=>n.tasks({assignee:e.name}),enabled:!!(e!=null&&e.name)})}export{r as u};

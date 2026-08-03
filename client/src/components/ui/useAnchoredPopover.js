@@ -34,11 +34,9 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 
 export const POPOVER_GAP = 8 // space between trigger and popover
 export const POPOVER_EDGE = 8 // minimum breathing room from any viewport edge
-// Phase 6.23a: a popover shorter than this is unusable - it reads as "the menu
-// flashed and vanished". When neither side of the trigger has this much room,
-// the surface is allowed to overlap the trigger and is clamped into the
-// viewport instead of being squeezed into a sliver.
-export const POPOVER_MIN_HEIGHT = 140
+// How long after opening a pointer event is still considered part of the
+// opening gesture and must therefore never dismiss the popover.
+export const OPEN_GRACE_MS = 250
 
 function samePos(a, b) {
   if (!a || !b) return false
@@ -69,7 +67,6 @@ export function useAnchoredPopover({
   const anchorRef = useRef(null) // the trigger: what we measure against
   const rootRef = useRef(null) // trigger wrapper: never counts as "outside"
   const popoverRef = useRef(null) // the portalled surface
-  const naturalRef = useRef(0) // last good natural height (see place())
   const [pos, setPos] = useState(null)
 
   const dismissRef = useRef(onDismiss)
@@ -85,15 +82,7 @@ export function useAnchoredPopover({
 
     // scrollHeight is the natural content height even while a maxHeight from a
     // previous measurement is still applied, so measuring never compounds.
-    // Phase 6.23a: a measurement of 0 means the surface has not been laid out
-    // yet (portalled node, webfont still swapping, images resolving). Applying
-    // it would clamp the menu to nothing, so the last good height is reused and
-    // a re-measure is scheduled by the caller.
-    const measured = pop.scrollHeight
-    if (measured > 0) naturalRef.current = measured
-    const natural = naturalRef.current || measured
-    if (!natural) return
-
+    const natural = pop.scrollHeight
     const viewport = Math.max(0, vh - POPOVER_EDGE * 2)
     const desired = Math.min(natural, viewport)
 
@@ -103,20 +92,9 @@ export function useAnchoredPopover({
     // above, so ordinary popovers keep their familiar downward placement.
     const flip = desired > below && above > below
     const space = Math.max(0, flip ? above : below)
-
-    // Phase 6.23a ROOT CAUSE of "the menu appears and then disappears": the
-    // height used to be capped at `space` with no lower bound, so a trigger
-    // sitting close to the bottom of the scroll area (exactly the Client
-    // Portal > Documents case, where the footer eats the last ~60px) produced
-    // maxHeight values of 20-30px. The menu was still open and still on top of
-    // the footer - it was simply collapsed to a sliver, which looks identical
-    // to it fading out. A popover is now never squeezed below
-    // POPOVER_MIN_HEIGHT (or its own natural height, or the viewport, whichever
-    // is smallest); when the chosen side cannot provide that, the surface is
-    // allowed to overlap its trigger and the `top` clamp below keeps every
-    // pixel of it inside the viewport.
-    const floor = Math.min(desired, viewport, POPOVER_MIN_HEIGHT)
-    const maxHeight = Math.max(0, Math.max(Math.min(desired, space), floor))
+    // Never taller than the space that actually exists: this is what stops the
+    // surface from running past the bottom of the viewport / behind the footer.
+    const maxHeight = Math.max(0, Math.min(desired, space))
 
     const width = pop.offsetWidth
     let left = align === 'right' ? r.right - width : r.left
@@ -140,28 +118,15 @@ export function useAnchoredPopover({
   // Measure after the surface exists in the DOM but before the browser paints,
   // so the first frame can never flash in the wrong place.
   useLayoutEffect(() => {
-    if (!open) { naturalRef.current = 0; setPos(null); return }
+    if (!open) { setPos(null); return }
     place()
-    // Phase 6.23a: re-measure on the next two frames. The first layout pass can
-    // land before the portalled surface has its final size (webfont swap, an
-    // async icon, a scrollbar appearing), and without this the popover would
-    // keep whatever height that first pass happened to see.
-    let raf2 = 0
-    const raf1 = requestAnimationFrame(() => { place(); raf2 = requestAnimationFrame(place) })
-    return () => { cancelAnimationFrame(raf1); if (raf2) cancelAnimationFrame(raf2) }
   }, [open, place, watch])
 
   // Keep the surface pinned while the page moves underneath it. `true` also
   // captures scrolls on inner scroll containers, not just the window.
   useEffect(() => {
     if (!open) return
-    // Phase 6.23a: scrolling the popover's OWN list must not re-run placement -
-    // it is not the page moving underneath the trigger, and re-measuring on
-    // every wheel tick made a long menu jitter.
-    const onMove = (e) => {
-      if (e && e.target && popoverRef.current && popoverRef.current.contains(e.target)) return
-      place()
-    }
+    const onMove = () => place()
     window.addEventListener('scroll', onMove, true)
     window.addEventListener('resize', onMove)
     let ro
@@ -179,19 +144,46 @@ export function useAnchoredPopover({
 
   // Click-outside + Escape. The portalled surface is no longer a DOM
   // descendant of the trigger, so it has to be checked explicitly.
+  //
+  // BUGFIX - "the menu appears and then closes again by itself".
+  // The dismiss listener was registered on `mousedown` from an effect that
+  // commits WHILE the very gesture that opened the popover is still in flight,
+  // and it decided "inside vs outside" with `contains(e.target)` only. Both
+  // parts were unsafe:
+  //   1. Any pointer event still belonging to the opening gesture (the browser
+  //      re-dispatching after the React commit, a second mousedown from a
+  //      double/fast click, a trigger whose icon is swapped during the press)
+  //      landed in this handler and dismissed the popover instantly.
+  //   2. `e.target` is useless once React has re-rendered the trigger during
+  //      the press: the clicked node is already detached, `contains()` returns
+  //      false, and a click ON the trigger was treated as a click OUTSIDE.
+  // The fix is a grace window around the opening gesture plus containment
+  // testing against `composedPath()` (the path is captured at dispatch time, so
+  // it still identifies the trigger even if the node was replaced).
   useEffect(() => {
-    if (!open) return
+    if (!open) return undefined
+    const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now())
+    const openedAt = now()
+    const isInside = (e) => {
+      const nodes = [rootRef.current, anchorRef.current, popoverRef.current].filter(Boolean)
+      if (!nodes.length) return false
+      const path = typeof e.composedPath === 'function' ? e.composedPath() : null
+      if (path && path.length) return nodes.some((n) => path.includes(n))
+      return nodes.some((n) => n.contains(e.target))
+    }
     const onDown = (e) => {
-      if (rootRef.current && rootRef.current.contains(e.target)) return
-      if (anchorRef.current && anchorRef.current.contains(e.target)) return
-      if (popoverRef.current && popoverRef.current.contains(e.target)) return
+      // Ignore whatever is left of the gesture that opened this popover.
+      if (now() - openedAt < OPEN_GRACE_MS) return
+      if (isInside(e)) return
       dismissRef.current?.('outside')
     }
     const onKey = (e) => { if (e.key === 'Escape') dismissRef.current?.('escape') }
-    document.addEventListener('mousedown', onDown)
+    // `pointerdown` in the capture phase is the earliest reliable signal and is
+    // not affected by a consumer that stops propagation on its own rows/cards.
+    document.addEventListener('pointerdown', onDown, true)
     document.addEventListener('keydown', onKey)
     return () => {
-      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('pointerdown', onDown, true)
       document.removeEventListener('keydown', onKey)
     }
   }, [open])

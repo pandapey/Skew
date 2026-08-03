@@ -172,7 +172,13 @@ export const Select = forwardRef(function Select(
         ref={anchorRef}
         type="button"
         disabled={disabled}
-        onClick={() => !disabled && !loading && setOpen((o) => !o)}
+        // BUGFIX: the Select is often rendered inside a clickable row, card or
+        // tile. Letting the opening click bubble also fired that ancestor
+        // handler (navigate / open a modal / re-render), which tore the listbox
+        // down again right after it appeared.
+        onPointerDown={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
+        onClick={(e) => { e.stopPropagation(); if (!disabled && !loading) setOpen((o) => !o) }}
         onKeyDown={onKeyDown}
         aria-haspopup="listbox"
         aria-expanded={open}
@@ -215,6 +221,11 @@ export const Select = forwardRef(function Select(
             exit={{ opacity: 0, y: -6, scale: 0.98 }}
             transition={{ duration: 0.14, ease: [0.22, 1, 0.36, 1] }}
             role="listbox"
+            // The listbox is portalled into <body>, but React still bubbles its
+            // synthetic events to this component's React ancestors. Keep them in.
+            onPointerDown={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
             // Phase 6.20 (TASK 2): the listbox was `w-full`, i.e. exactly the
             // width of its trigger. Wherever the shared Select is rendered with
             // a shrink-to-fit trigger - `className="w-auto"` on the client

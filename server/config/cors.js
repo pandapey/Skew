@@ -7,7 +7,7 @@
 // hosts. Non-browser clients (curl, test harnesses, server-to-server) send no
 // Origin header, which we treat as allowed.
 
-const ALLOWED_ORIGINS = (process.env.CLIENT_URL || 'https://skew-server-tkkj.onrender.com')
+const ALLOWED_ORIGINS = (process.env.CLIENT_URL || 'http://localhost:5173')
   .split(',').map((s) => s.trim()).filter(Boolean)
 
 const isAllowedOrigin = (origin) => {

@@ -171,17 +171,15 @@ export default function Files() {
   const sharedCount = files.filter((f) => (f.sharedWith?.length || 0) > 0 || f.permission !== 'private').length
   const starredCount = files.filter((f) => f.starred).length
 
-  const MoreMenu = ({ item }) => (
-    <Dropdown
-      trigger={<span className="rounded-lg p-1.5 hover:bg-black/5 dark:hover:bg-white/10" aria-label="More"><FiEdit2 className="h-4 w-4" /></span>}
-    >
-      <DropdownItem icon={FiShare2} onClick={() => setShareFile(item)}>Share</DropdownItem>
-      <DropdownItem icon={FiLock} onClick={() => setPermFile(item)}>Permissions</DropdownItem>
-      <DropdownItem icon={FiClock} onClick={() => setVersionFile(item)}>Version History</DropdownItem>
-      <DropdownItem icon={FiEdit2} onClick={() => setRenameTarget(item)}>Rename</DropdownItem>
-      <DropdownItem icon={FiTrash2} onClick={() => setDeleting(item)}>Move to Bin</DropdownItem>
-    </Dropdown>
-  )
+  // BUGFIX - <MoreMenu> used to be declared HERE, inside the Files component.
+  // A component declared inside another component is a BRAND NEW COMPONENT TYPE
+  // on every single render, so React cannot reconcile it: it unmounts the old
+  // tree and mounts a fresh one, throwing away the Dropdown's internal `open`
+  // state. This page re-renders constantly (react-query `isFetching`, the star
+  // mutation, the realtime socket invalidations, every `setState`), so the menu
+  // opened and then vanished on its own a moment later. It now lives at module
+  // scope (bottom of this file) with a stable identity and takes its handlers
+  // as props.
 
   if (isLoading) return <Loader label="Loading files…" />
 
@@ -312,7 +310,7 @@ export default function Files() {
                       <button onClick={() => setHardDeleting(f)} className="rounded-lg p-1.5 hover:bg-danger/10 hover:text-danger ml-auto" aria-label="Delete forever"><FiTrash2 className="h-4 w-4" /></button>
                     </>
                   ) : (
-                    <span className="ml-auto"><MoreMenu item={f} /></span>
+                    <span className="ml-auto"><MoreMenu item={f} onShare={setShareFile} onPermissions={setPermFile} onVersions={setVersionFile} onRename={setRenameTarget} onDelete={setDeleting} /></span>
                   )}
                 </div>
                 {f.sharedWith?.length > 0 && <FiShare2 className="absolute left-2 top-2 h-3.5 w-3.5 text-accent" />}
@@ -346,7 +344,7 @@ export default function Files() {
                   <button onClick={() => downloadFile(f)} className="rounded-lg p-1.5 hover:bg-success/10 hover:text-success" aria-label="Download"><FiDownload className="h-4 w-4" /></button>
                   {showTrash ? (
                     <button onClick={() => restoreMutation.mutate(f.id)} className="rounded-lg p-1.5 hover:bg-success/10 hover:text-success" aria-label="Restore"><FiRotateCcw className="h-4 w-4" /></button>
-                  ) : <MoreMenu item={f} />}
+                  ) : <MoreMenu item={f} onShare={setShareFile} onPermissions={setPermFile} onVersions={setVersionFile} onRename={setRenameTarget} onDelete={setDeleting} />}
                   {showTrash && <button onClick={() => setHardDeleting(f)} className="rounded-lg p-1.5 hover:bg-danger/10 hover:text-danger" aria-label="Delete forever"><FiTrash2 className="h-4 w-4" /></button>}
                 </div>
               ))}
@@ -571,5 +569,36 @@ function RenameModal({ target, onClose, onSubmit }) {
       footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button disabled={!name.trim()} onClick={() => onSubmit(name.trim())}>Rename</Button></>}>
       <Input label="Name" value={name} onChange={(e) => setName(e.target.value)} autoFocus />
     </Modal>
+  )
+}
+
+// =============================================================================
+// BUGFIX - stable, module-scope <MoreMenu>.
+//
+// This component used to be declared INSIDE <Files>. React identifies a
+// component by its function reference, so a function that is re-created on
+// every render is a different component type every render: React unmounts the
+// previous subtree and mounts a new one instead of updating it. The shared
+// <Dropdown> keeps its `open` flag in local state, so that state was destroyed
+// on the very next render of the page - which happens constantly here
+// (react-query background refetch, the star/permission mutations, the realtime
+// socket invalidations, any setState). The result was exactly the reported
+// symptom: the menu opened on click and closed again by itself.
+//
+// Declared at module scope its identity is stable, so the menu now stays open
+// until the user picks an item, clicks outside, or presses Escape.
+// =============================================================================
+function MoreMenu({ item, onShare, onPermissions, onVersions, onRename, onDelete }) {
+  return (
+    <Dropdown
+      align="right"
+      trigger={<span className="rounded-lg p-1.5 hover:bg-black/5 dark:hover:bg-white/10" aria-label="More"><FiEdit2 className="h-4 w-4" /></span>}
+    >
+      <DropdownItem icon={FiShare2} onClick={() => onShare(item)}>Share</DropdownItem>
+      <DropdownItem icon={FiLock} onClick={() => onPermissions(item)}>Permissions</DropdownItem>
+      <DropdownItem icon={FiClock} onClick={() => onVersions(item)}>Version History</DropdownItem>
+      <DropdownItem icon={FiEdit2} onClick={() => onRename(item)}>Rename</DropdownItem>
+      <DropdownItem icon={FiTrash2} onClick={() => onDelete(item)}>Move to Bin</DropdownItem>
+    </Dropdown>
   )
 }

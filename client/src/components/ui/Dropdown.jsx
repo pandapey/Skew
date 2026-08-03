@@ -43,6 +43,16 @@ export function Dropdown({ trigger, children, align = 'right', className }) {
           transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
           role="menu"
           style={style}
+          // BUGFIX - the menu lives in a <body> portal, but a portal is still a
+          // CHILD OF THIS COMPONENT IN THE REACT TREE, so React replays its
+          // synthetic events up the React parents: the DataTable row
+          // (`onRowClick`), clickable cards, dropzone wrappers, ... Those
+          // handlers navigate / open a modal / reset page state, which unmounts
+          // or re-renders the Dropdown - the menu "closed by itself" the moment
+          // it was touched. The menu is a self-contained surface, so its pointer
+          // events must never reach those ancestors.
+          onPointerDown={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
           // `overflow-y-auto` is the last-resort escape hatch for a menu taller
           // than the whole viewport; with the flip + height cap in the hook,
           // ordinary menus never reach it and are shown in full.
@@ -50,7 +60,13 @@ export function Dropdown({ trigger, children, align = 'right', className }) {
             'glass-strong fixed z-[60] w-max min-w-48 max-w-[min(20rem,calc(100vw-1rem))]',
             'overflow-y-auto overscroll-contain rounded-card p-1.5 shadow-floating'
           )}
-          onClick={() => setOpen(false)}
+          onClick={(e) => {
+            e.stopPropagation()
+            // Close only when an actual menu item was chosen. Clicking a header,
+            // a separator or the padding used to close the menu too.
+            const el = e.target instanceof Element ? e.target : null
+            if (!el || el.closest('[role="menuitem"]')) setOpen(false)
+          }}
         >
           {children}
         </motion.div>
@@ -63,7 +79,18 @@ export function Dropdown({ trigger, children, align = 'right', className }) {
       <button
         ref={anchorRef}
         type="button"
-        onClick={() => setOpen((o) => !o)}
+        // Same reason as the menu above: the trigger is very often rendered
+        // inside a clickable row / card / tile. Without this the opening click
+        // ALSO fired the ancestor handler (navigate to the row, open a preview,
+        // toggle a folder...), which re-rendered or unmounted this Dropdown and
+        // made the just-opened menu disappear immediately.
+        onPointerDown={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          setOpen((o) => !o)
+        }}
         aria-haspopup="menu"
         aria-expanded={open}
       >

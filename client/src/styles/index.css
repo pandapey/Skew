@@ -1,0 +1,629 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================================
+   SKEW ENTERPRISE HUB — GLASS DESIGN SYSTEM
+   ============================================================ */
+
+:root {
+  --bg: #F8FAFC;
+  --surface: #FFFFFF;
+  --text: #0F172A;
+  --text-muted: #64748B;
+  --border: #E2E8F0;
+
+  /* Glass tokens (light) */
+  --glass-blur: 22px;
+  --glass-bg: rgba(255, 255, 255, 0.55);
+  --glass-bg-strong: rgba(255, 255, 255, 0.74);
+  --glass-bg-soft: rgba(255, 255, 255, 0.4);
+  --glass-border: rgba(15, 23, 42, 0.08);
+  --glass-inset: inset 0 1px 0 0 rgba(255, 255, 255, 0.6);
+  --glass-shadow:
+    0 12px 40px -12px rgba(15, 23, 42, 0.20),
+    0 4px 12px -4px rgba(15, 23, 42, 0.10),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.55);
+
+  --noise-opacity: 0.035;
+
+  /* Aurora palette */
+  --aurora-1: rgba(37, 99, 235, 0.20);
+  --aurora-2: rgba(6, 182, 212, 0.18);
+  --aurora-3: rgba(139, 92, 246, 0.16);
+  --aurora-4: rgba(16, 185, 129, 0.14);
+}
+
+.dark {
+  --bg: #020617;
+  --surface: #0F172A;
+  --text: #E2E8F0;
+  --text-muted: #94A3B8;
+  --border: #1E293B;
+
+  /* Glass tokens (dark) */
+  --glass-blur: 22px;
+  --glass-bg: rgba(15, 23, 42, 0.55);
+  --glass-bg-strong: rgba(15, 23, 42, 0.72);
+  --glass-bg-soft: rgba(15, 23, 42, 0.4);
+  --glass-border: rgba(255, 255, 255, 0.10);
+  --glass-inset: inset 0 1px 0 0 rgba(255, 255, 255, 0.08);
+  --glass-shadow:
+    0 16px 50px -12px rgba(0, 0, 0, 0.75),
+    0 4px 14px -4px rgba(0, 0, 0, 0.55),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.08);
+
+  --noise-opacity: 0.05;
+
+  --aurora-1: rgba(37, 99, 235, 0.32);
+  --aurora-2: rgba(6, 182, 212, 0.28);
+  --aurora-3: rgba(139, 92, 246, 0.26);
+  --aurora-4: rgba(16, 185, 129, 0.20);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: 'Inter', system-ui, sans-serif;
+  background-color: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Accessible focus ring */
+:focus-visible {
+  outline: 2px solid rgba(37, 99, 235, 0.55);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+::selection {
+  background: rgba(37, 99, 235, 0.22);
+}
+
+/* ============================================================
+   COMPONENT LAYER
+   ============================================================ */
+@layer components {
+  .app-bg {
+    background-color: var(--bg);
+  }
+
+  .surface {
+    background-color: var(--surface);
+    color: var(--text);
+  }
+
+  .text-muted {
+    color: var(--text-muted);
+  }
+
+  .border-app {
+    border-color: var(--border);
+  }
+
+  /* ---------- Glass surfaces ---------- */
+  .glass {
+    background: var(--glass-bg);
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+    backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+    border: 1px solid var(--glass-border);
+    box-shadow: var(--glass-shadow);
+  }
+
+  .glass-strong {
+    background: var(--glass-bg-strong);
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+    backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+    border: 1px solid var(--glass-border);
+    box-shadow: var(--glass-shadow);
+  }
+
+  .glass-soft {
+    background: var(--glass-bg-soft);
+    -webkit-backdrop-filter: blur(14px) saturate(160%);
+    backdrop-filter: blur(14px) saturate(160%);
+    border: 1px solid var(--glass-border);
+  }
+
+  /* Gradient hairline border wrapper */
+  .gradient-border {
+    position: relative;
+    border-radius: 24px;
+  }
+  .gradient-border::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1px;
+    background: linear-gradient(135deg, rgba(37, 99, 235, 0.5), rgba(6, 182, 212, 0.35), rgba(139, 92, 246, 0.4));
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    pointer-events: none;
+    opacity: 0.7;
+  }
+
+  /* ---------- Cards ---------- */
+  .card {
+    border-radius: 24px;
+    border: 1px solid var(--glass-border);
+    background: var(--glass-bg);
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+    backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+    box-shadow: var(--glass-shadow);
+    color: var(--text);
+  }
+
+  /* ---------- Buttons ---------- */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 text-sm font-semibold;
+    position: relative;
+    overflow: hidden;
+    border-radius: 18px;
+    padding: 0.5rem 1rem;
+    border: 1px solid transparent;
+    transition: transform 0.18s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.2s ease,
+      background-color 0.2s ease, border-color 0.2s ease, opacity 0.2s ease;
+    cursor: pointer;
+    color: var(--text);
+    -webkit-tap-highlight-color: transparent;
+  }
+  .btn:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.4);
+  }
+  .btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none !important;
+  }
+
+  .btn-primary {
+    @apply btn text-white;
+    background: linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%);
+    box-shadow: 0 10px 26px -10px rgba(37, 99, 235, 0.6), var(--glass-inset);
+  }
+  .btn-primary:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 14px 34px -10px rgba(37, 99, 235, 0.75), var(--glass-inset);
+  }
+  .btn-primary:active:not(:disabled) {
+    transform: translateY(0);
+  }
+
+  .btn-ghost {
+    @apply btn;
+    background: var(--glass-bg);
+    -webkit-backdrop-filter: blur(14px);
+    backdrop-filter: blur(14px);
+    border-color: var(--glass-border);
+    box-shadow: var(--glass-inset);
+  }
+  .btn-ghost:hover:not(:disabled) {
+    background: var(--glass-bg-strong);
+    border-color: rgba(37, 99, 235, 0.35);
+    transform: translateY(-1px);
+  }
+
+  .btn-danger {
+    @apply btn text-white;
+    background: linear-gradient(135deg, #EF4444 0%, #DC2626 100%);
+    box-shadow: 0 10px 26px -10px rgba(239, 68, 68, 0.6), var(--glass-inset);
+  }
+  .btn-danger:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 14px 34px -10px rgba(239, 68, 68, 0.75), var(--glass-inset);
+  }
+
+  .btn-success {
+    @apply btn text-white;
+    background: linear-gradient(135deg, #10B981 0%, #059669 100%);
+    box-shadow: 0 10px 26px -10px rgba(16, 185, 129, 0.6), var(--glass-inset);
+  }
+  .btn-success:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 14px 34px -10px rgba(16, 185, 129, 0.75), var(--glass-inset);
+  }
+
+  /* Glow variant */
+  .btn-glow {
+    animation: pulse-glow 4s ease-in-out infinite;
+  }
+
+  /* ---------- Inputs ---------- */
+  .input {
+    @apply w-full text-sm;
+    border-radius: 14px;
+    border: 1px solid var(--glass-border);
+    background: var(--glass-bg);
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+    padding: 0.6rem 0.9rem;
+    color: var(--text);
+    outline: none;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease, transform 0.15s ease;
+  }
+  .input::placeholder {
+    color: var(--text-muted);
+    opacity: 0.65;
+  }
+  .input:hover {
+    border-color: rgba(37, 99, 235, 0.35);
+  }
+  .input:focus {
+    border-color: #2563EB;
+    box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.16), 0 10px 28px -14px rgba(37, 99, 235, 0.5);
+    background: var(--glass-bg-strong);
+  }
+
+  .label {
+    @apply mb-1 block text-sm font-medium;
+    color: var(--text);
+  }
+
+  /* ---------- Chips / Badges ---------- */
+  .chip {
+    @apply inline-flex items-center gap-1 text-xs font-semibold;
+    border-radius: 9999px;
+    padding: 0.15rem 0.6rem;
+    border: 1px solid var(--glass-border);
+    background: var(--glass-bg);
+  }
+
+  /* ---------- Gradient text ---------- */
+  .gradient-text {
+    background: linear-gradient(120deg, #2563EB 0%, #06B6D4 55%, #8B5CF6 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  /* ---------- Salary print support (Phase 6.8 TASK 4 + TASK 7) ----------
+     Used by features/salary/components.jsx (SalaryHeader, SalaryDocumentLayout)
+     and pages/salary/SalaryReport.jsx + SalaryHistory.jsx "View Details". No
+     print utility existed before this; this is the ONE place print behaviour
+     for salary documents is defined — nothing else recreates it. */
+  .print-band {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* Elements that should never appear on a printed salary document (action
+     bars, back buttons, page chrome). Hidden only inside @media print below,
+     so normal on-screen behaviour is completely unaffected. */
+  .no-print {
+    display: block;
+  }
+
+  /* Printable salary surfaces (the shared document card, the net-pay strip)
+     render as a plain bordered box in print - glass blur does not render
+     reliably across browsers' print engines. */
+  .print-plain {
+    background: var(--surface);
+  }
+
+  /* ---------- Misc helpers ---------- */
+  .divider {
+    height: 1px;
+    background: var(--glass-border);
+  }
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+
+  body {
+    background: #ffffff;
+  }
+
+  #salary-print-area,
+  #salary-history-detail-print-area {
+    box-shadow: none !important;
+  }
+
+  #salary-print-area .print-plain,
+  #salary-history-detail-print-area .print-plain {
+    background: #ffffff !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+    box-shadow: none !important;
+    border: 1px solid #cbd5e1 !important;
+  }
+}
+
+/* ============================================================
+   ANIMATED BACKGROUND (Aurora mesh + noise)
+   ============================================================ */
+.aurora-canvas {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.aurora-blob {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(70px);
+  will-change: transform, opacity;
+  mix-blend-mode: normal;
+}
+
+.noise-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  opacity: var(--noise-opacity);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 180px 180px;
+}
+
+/* Subtle dotted grid for depth */
+.dot-grid {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image: radial-gradient(rgba(148, 163, 184, 0.10) 1px, transparent 1px);
+  background-size: 26px 26px;
+  mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, #000 40%, transparent 100%);
+  -webkit-mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, #000 40%, transparent 100%);
+}
+
+/* ============================================================
+   SCROLLBAR
+   ============================================================ */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--text-muted) 40%, transparent);
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--text-muted) 60%, transparent);
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--text-muted) 40%, transparent) transparent;
+}
+
+/* ============================================================
+   REDUCED MOTION
+   ============================================================ */
+@media (prefers-reduced-motion: reduce) {
+  .aurora-blob,
+  .dot-grid,
+  .noise-overlay,
+  .animate-aurora,
+  .animate-drift,
+  .animate-float-slow,
+  .animate-pulse-glow,
+  .btn-glow {
+    animation: none !important;
+  }
+  * {
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ============================================================
+   INLINE FILE PREVIEWS (Excel/CSV + Word docs)
+   ============================================================ */
+.file-preview-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.file-preview-table th,
+.file-preview-table td {
+  border: 1px solid var(--glass-border);
+  padding: 6px 10px;
+  text-align: left;
+  white-space: nowrap;
+}
+.file-preview-table th {
+  background: var(--glass-bg-strong);
+  font-weight: 600;
+  position: sticky;
+  top: 0;
+}
+.file-preview-table tr:nth-child(even) td {
+  background: color-mix(in srgb, var(--bg) 50%, transparent);
+}
+.file-preview-doc {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text);
+}
+.file-preview-doc img {
+  max-width: 100%;
+  height: auto;
+}
+.file-preview-doc table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 12px 0;
+}
+.file-preview-doc table,
+.file-preview-doc th,
+.file-preview-doc td {
+  border: 1px solid var(--glass-border);
+}
+.file-preview-doc th,
+.file-preview-doc td {
+  padding: 6px 10px;
+}
+.file-preview-doc h1,
+.file-preview-doc h2,
+.file-preview-doc h3 {
+  margin: 14px 0 8px;
+  font-weight: 700;
+}
+.file-preview-doc p {
+  margin: 8px 0;
+}
+
+
+/* ============================================================
+   DESIGN-SYSTEM FORM CONSISTENCY (global, project-wide)
+   One source of truth so every form field across every module
+   shares the same height, radius, spacing and theming.
+   ============================================================ */
+
+/* Native colour-scheme so browser UI (date/time pickers, scrollbars,
+   spin buttons) matches the active theme automatically. */
+:root { color-scheme: light; }
+.dark { color-scheme: dark; }
+
+/* Uniform field height + vertical rhythm for EVERY shared field
+   (.input is used by Input, Select trigger and Textarea). */
+.input {
+  min-height: 2.75rem;
+  line-height: 1.35;
+}
+textarea.input {
+  min-height: 5rem;
+}
+
+/* Consistent label spacing across all forms. */
+.label {
+  margin-bottom: 0.375rem;
+  letter-spacing: 0.01em;
+}
+
+/* ---------- Date / time picker icon (Issue 4) ----------
+   Light theme -> dark icon (browser default). Dark theme -> light icon.
+   Global; applies to every <input type="date|time|datetime-local|month|week">
+   throughout the app without any per-page CSS. */
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="time"]::-webkit-calendar-picker-indicator,
+input[type="datetime-local"]::-webkit-calendar-picker-indicator,
+input[type="month"]::-webkit-calendar-picker-indicator,
+input[type="week"]::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  opacity: 0.7;
+  transition: opacity 0.2s ease, filter 0.2s ease;
+}
+input[type="date"]::-webkit-calendar-picker-indicator:hover,
+input[type="time"]::-webkit-calendar-picker-indicator:hover,
+input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover,
+input[type="month"]::-webkit-calendar-picker-indicator:hover,
+input[type="week"]::-webkit-calendar-picker-indicator:hover {
+  opacity: 1;
+}
+/* In dark mode `color-scheme: dark` (set on .dark above) ALREADY renders a
+   white calendar-picker indicator. The previous `filter: invert(1)` then
+   inverted that white glyph back to BLACK — the exact "icon stays black in dark
+   mode" bug (#16). Rely on color-scheme for correct theming in BOTH themes and
+   apply no inversion, so the icon is dark on light and white on dark globally,
+   with no per-page CSS. */
+.dark input[type="date"]::-webkit-calendar-picker-indicator,
+.dark input[type="time"]::-webkit-calendar-picker-indicator,
+.dark input[type="datetime-local"]::-webkit-calendar-picker-indicator,
+.dark input[type="month"]::-webkit-calendar-picker-indicator,
+.dark input[type="week"]::-webkit-calendar-picker-indicator {
+  filter: none;
+  opacity: 0.9;
+}
+
+/* ==========================================================================
+   Phase 6.7 (TASK 4 + TASK 5) — print support for the salary documents.
+   ROOT CAUSE: the project had NO print styling of any kind (verified: zero
+   `@media print` rules and zero `window.print` calls existed before this
+   phase), so a browser print of any page would have dumped the sidebar,
+   topbar and action buttons onto the paper. Rather than adding a new
+   dependency (html2canvas / react-to-print), the Salary Report and Salary
+   Slip mark their document wrapper with #salary-print-area and their controls
+   with .no-print, and these rules isolate the document on the printed page.
+   Scoped to printing only — zero effect on screen rendering for any role.
+   ========================================================================== */
+@media print {
+  /* Hide the app shell without unmounting it (visibility, not display, so the
+     document's own layout is not reflowed by ancestor removal). */
+  body * {
+    visibility: hidden;
+  }
+
+  #salary-print-area,
+  #salary-print-area * {
+    visibility: visible;
+  }
+
+  #salary-print-area {
+    position: absolute;
+    inset: 0 auto auto 0;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    box-shadow: none !important;
+  }
+
+  /* Buttons / nav affordances never belong on paper. */
+  .no-print,
+  .no-print * {
+    display: none !important;
+  }
+
+  /* Force a light, ink-friendly rendering even in dark mode. */
+  html,
+  body {
+    background: #ffffff !important;
+  }
+
+  #salary-print-area,
+  #salary-print-area * {
+    color: #0f172a !important;
+    background-image: none !important;
+    text-shadow: none !important;
+  }
+
+  #salary-print-area .print-plain {
+    background: #ffffff !important;
+    border-color: #cbd5e1 !important;
+    backdrop-filter: none !important;
+  }
+
+  #salary-print-area .print-band {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  #salary-print-area table {
+    page-break-inside: auto;
+  }
+
+  #salary-print-area tr {
+    page-break-inside: avoid;
+  }
+
+  @page {
+    margin: 12mm;
+  }
+}

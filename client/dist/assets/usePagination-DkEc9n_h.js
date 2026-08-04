@@ -1,1 +1,0 @@
-import{e as c}from"./vendor-react-bqabn7da.js";function h(e=[],a=8){const[t,r]=c.useState(1),s=Math.max(1,Math.ceil(e.length/a)),u=c.useMemo(()=>{const o=(t-1)*a;return e.slice(o,o+a)},[e,t,a]),n=o=>r(Math.min(Math.max(1,o),s));return{page:t,totalPages:s,paged:u,setPage:n,next:()=>n(t+1),prev:()=>n(t-1)}}export{h as u};

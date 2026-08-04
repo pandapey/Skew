@@ -3,7 +3,7 @@ import toast from 'react-hot-toast'
 import { store } from '@/redux/store'
 import { logout as logoutAction, setTokens as setTokensAction } from '@/redux/slices/authSlice'
 
-const baseURL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api'
+const baseURL = import.meta.env.VITE_API_BASE_URL || 'https://skew-server-tkkj.onrender.com/api'
 
 // In-memory auth token holder. Per the MongoDB-only migration we no longer
 // persist credentials in localStorage; the token lives for the session only.

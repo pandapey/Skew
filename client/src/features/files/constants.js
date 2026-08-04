@@ -39,6 +39,6 @@ export function detectType(file) {
 // Build an absolute URL for a stored file (static /uploads serving).
 export function fileUrl(url) {
   if (!url) return null
-  const base = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api').replace(/\/api$/, '')
+const base = (import.meta.env.VITE_API_BASE_URL || 'https://skew-server-tkkj.onrender.com/api').replace(/\/api$/, '')
   return `${base}${url}`
 }

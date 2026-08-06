@@ -1,3 +1,11 @@
+/**
+ * Central timezone utilities for attendance.
+ *
+ * MongoDB/JavaScript Date values remain absolute UTC instants.
+ * Attendance's human-readable date/time is calculated in the employee's
+ * IANA timezone (for example Asia/Kolkata / Asia/Calcutta).
+ */
+
 export const DEFAULT_TIMEZONE = 'Asia/Kolkata'
 
 export function getTimezone(timezone) {
@@ -8,7 +16,7 @@ export function getTimezone(timezone) {
   try {
     new Intl.DateTimeFormat('en-US', {
       timeZone: timezone,
-    }).format()
+    }).format(new Date())
 
     return timezone
   } catch {
@@ -33,18 +41,16 @@ export function getTimeParts(date = new Date(), timezone = DEFAULT_TIMEZONE) {
   return Object.fromEntries(
     parts
       .filter((part) => part.type !== 'literal')
-      .map((part) => [part.type, part.value])
+      .map((part) => [part.type, part.value]),
   )
 }
 
 export function getLocalDate(date = new Date(), timezone = DEFAULT_TIMEZONE) {
   const parts = getTimeParts(date, timezone)
-
   return `${parts.year}-${parts.month}-${parts.day}`
 }
 
 export function getLocalTime(date = new Date(), timezone = DEFAULT_TIMEZONE) {
   const parts = getTimeParts(date, timezone)
-
   return `${parts.hour}:${parts.minute}:${parts.second}`
 }

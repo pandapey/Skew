@@ -220,10 +220,14 @@ export const attendanceApi = {
   today: async () => apiClient.get('/attendance/today'),
 
   checkIn: async ({ timezone } = {}) => apiClient.post('/attendance/check-in', { timezone }),
-  checkOut: async () => apiClient.post('/attendance/check-out', {}),
-  toggleBreak: async ({ onBreak } = {}) => apiClient.post('/attendance/break', { onBreak }),
+  checkOut: async ({ timezone } = {}) => apiClient.post('/attendance/check-out', { timezone }),
+  toggleBreak: async ({ onBreak, timezone } = {}) => apiClient.post('/attendance/break', { onBreak, timezone }),
 
-  calendar: async () => apiClient.get('/attendance/calendar'),
+  // PHASE 6 (TASK 3): accepts an optional { year, month } (month 0-based) or
+  // { from, to } so the Attendance calendar can ask for the month it is
+  // actually showing. Defaults to {} — a caller that passes no argument still
+  // gets the full history, exactly as before.
+  calendar: async (params = {}) => apiClient.get('/attendance/calendar', { params }),
   // Phase 5.7 (Task 5): accepts an optional { date } so the Company Attendance
   // Dashboard can summarise any day. Defaults to {} — existing callers that
   // pass no argument keep hitting today's summary exactly as before.

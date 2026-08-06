@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import {
@@ -47,15 +48,34 @@ export default function Attendance() {
   // the personal attendance page. The personal queries below are disabled for
   // Admin so the page never even asks for an Admin's own attendance record.
   const isAdmin = hasRole(ROLES.ADMIN)
-  const { data: history, isLoading } = useQuery({ queryKey: ['attendance-me', {}], queryFn: () => attendanceApi.myHistory({ limit: 8 }), enabled: !isAdmin })
-  const { data: calendar = {} } = useQuery({ queryKey: ['attendance-calendar'], queryFn: attendanceApi.calendar, enabled: !isAdmin })
-  const { data: stats } = useQuery({ queryKey: ['attendance-stats'], queryFn: () => attendanceApi.stats(), enabled: canReport && !isAdmin })
+  const timezone = useMemo(() => {
+    try {
+      return Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata'
+    } catch {
+      return 'Asia/Kolkata'
+    }
+  }, [])
+  const { data: history, isLoading } = useQuery({
+    queryKey: ['attendance-me', { timezone }],
+    queryFn: () => attendanceApi.myHistory({ limit: 8, timezone }),
+    enabled: !isAdmin,
+  })
+  const { data: calendar = {} } = useQuery({
+    queryKey: ['attendance-calendar', timezone],
+    queryFn: () => attendanceApi.calendar({ timezone }),
+    enabled: !isAdmin,
+  })
+  const { data: stats } = useQuery({
+    queryKey: ['attendance-stats', timezone],
+    queryFn: () => attendanceApi.stats({ timezone }),
+    enabled: canReport && !isAdmin,
+  })
   // Personal month summary for the LOGGED-IN employee (Issue 2). Average Hours
   // and Overtime were previously read from the org-wide 'stats' query, which is
   // only fetched for managers/HR/admins (enabled: canReport) 2014 so they were always
   // '2014' for employees. These figures are personal, so they come from the
   // per-user /attendance/me/summary endpoint (real data, own records only).
-  const { data: mySummary } = useQuery({ queryKey: ['attendance-my-summary'], queryFn: () => attendanceApi.mySummary(), enabled: !isAdmin })
+  const { data: mySummary } = useQuery({ queryKey: ['attendance-my-summary', timezone], queryFn: () => attendanceApi.mySummary({ timezone }), enabled: !isAdmin })
 
   const rows = history?.data ?? []
 

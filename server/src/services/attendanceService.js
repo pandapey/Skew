@@ -1,18 +1,17 @@
 import { Attendance, Shift, Holiday } from '../models/attendanceModels.js'
 import { User } from '../models/User.js'
-import { Employee } from '../models/Employee.js'
 import { ApiError } from '../utils/asyncHandler.js'
-// PHASE ADMIN ATTENDANCE (TASK 1): the EXISTING shift resolver (already the
-// single source of truth for leave expiry + HR reminders) is imported, not
-// re-implemented, so "which shift is this employee on and when does it start?"
-// has exactly one answer across the whole system.
-import { loadShiftContext, resolveShiftConfig, DEFAULT_SHIFT_HOURS } from '../utils/leaveExpiry.js'
+import {
+  DEFAULT_TIMEZONE,
+  getTimezone,
+  getLocalDate,
+  getLocalTime,
+} from '../utils/timezone.js'
 // Phase 6.12 (TASK 10): the EXISTING single source of truth for working-day
 // arithmetic (Sundays + Company Holidays excluded). It is imported, not
 // re-implemented, so payroll counts a working day exactly the way leave apply,
 // leave approve, balances and the leave reports already count one.
 import { countWorkingDays, toDateKey } from '../utils/leaveDays.js'
-import { DEFAULT_TIMEZONE, getTimezone, getLocalDate, getLocalTime } from '../utils/timezone.js'
 
 // Phase 5.7 (Task 5): Admin is an oversight role, not a tracked headcount, so
 // it must never be required to mark attendance. Enforced on the SERVER as well
@@ -41,12 +40,12 @@ function resolveAttendanceTimezone(explicitTimezone, userTimezone) {
   return getTimezone(explicitTimezone || userTimezone || DEFAULT_TIMEZONE)
 }
 
-function attendanceToday(timezone) {
+function todayInTimezone(timezone) {
   return getLocalDate(new Date(), timezone)
 }
 
-function attendanceNow(timezone) {
-  return getLocalTime(new Date(), timezone)
+function nowHMSInTimezone(date, timezone) {
+  return getLocalTime(date, timezone)
 }
 
 // Parse "HH:mm" to minutes-since-midnight.
@@ -56,106 +55,33 @@ const toMins = (hm) => {
   return h * 60 + m
 }
 
-// ---------------------------------------------------------------------------
-// PHASE ADMIN ATTENDANCE (TASK 1) — SHIFT-DRIVEN LATENESS
-//
-// TRACE: Attendance -> Shift Management (pages/attendance/Shifts.jsx)
-//        -> attendanceApi.shifts -> /api/attendance/shifts (resourceRouter)
-//        -> Shift model  { name, code, start, end, hours, graceMins }
-//        -> employee check-in (CheckInCard -> POST /api/attendance/check-in)
-//        -> attendanceController.checkIn -> attendanceService.checkIn
-//        -> Attendance.status -> Attendance page / Dashboard / reports / payroll
-//
-// ROOT CAUSE: attendanceService.checkIn NEVER READ THE SHIFT COLLECTION. It
-// decided lateness with a literal:
-//
-//     const late = toMins(checkIn) > 9 * 60 + 15   // after 09:15 grace
-//
-// so the entire Shift Management screen — start time AND the configured grace
-// period — was decorative as far as attendance was concerned. With a shift
-// configured to start at 09:30, anybody arriving after 09:15 (e.g. 09:20, a full
-// ten minutes EARLY) was stamped 'Late'. That is the exact reported symptom.
-// checkOut carried the same defect twice more: `< 17 * 60` for Early Exit
-// (ignoring Shift.end) and `> 9` hours for overtime (ignoring Shift.hours).
-//
-// A third, quieter defect: the Attendance document's `shift` field was never
-// written, so every record kept the schema default 'General'. mySummary() DOES
-// read contracted hours out of the Shift collection, but it matches on that
-// stale name — so overtime was computed against the wrong shift for anyone not
-// actually on General.
-//
-// The fix resolves the employee's real shift from MongoDB and derives all three
-// values from it. This is the ONLY place in the codebase that computes `late` /
-// `earlyExit` / `status` (verified by grep: every other consumer — Attendance
-// page, Dashboard, attendance reports, reportController, payrollEngine via
-// mySummary — reads the stored `status`), so fixing it here fixes it everywhere
-// without duplicating the calculation.
-//
-// TIMEZONE: both sides of the comparison are server-local minutes-since-midnight
-// — `nowHMS()` formats the local wall clock and Shift.start is a local "HH:mm"
-// typed by an admin. No UTC conversion happens on either side, so there is no
-// UTC/local mismatch to correct. `checkInAt` / `checkInSeconds` remain absolute
-// instants and are unaffected.
-//
-// Resolution order for the employee's shift name mirrors leaveService exactly:
-// the linked Employee HR record first (canonical), then the User account. The
-// shift already stamped on today's Attendance document is offered last — it is
-// existing stored data (schema default 'General'), not an invented value, and it
-// keeps records created before shifts were assigned resolving the same way they
-// always did. If none of them names a real Shift, resolveShiftConfig returns
-// `startMins: null` and NOTHING is judged — see its comment.
-async function resolveShiftForUser(user, recordShiftName) {
-  const [ctx, emp] = await Promise.all([
-    loadShiftContext(),
-    Employee.findOne({
-      $or: [
-        ...(user?._id ? [{ userId: user._id }] : []),
-        ...(user?.empCode ? [{ empCode: user.empCode }] : []),
-        { name: user?.name },
-      ],
-    }).select('shift -_id').lean(),
-  ])
-  return resolveShiftConfig([emp?.shift, user?.shift, recordShiftName], ctx)
-}
-
-// Is this check-in late? Late means "after the configured shift start PLUS the
-// shift's own configured grace period" — the pre-existing business rule from the
-// Shift schema (`graceMins`, surfaced and edited on the Shift Management page),
-// applied to the configured start instead of to a hardcoded 09:00.
-//
-// With a 09:30 shift and graceMins = 0:  09:29 on time, 09:30 on time, 09:31 late.
-// With the schema default graceMins = 15: the 15-minute allowance an admin can
-// see and change on the Shift Management screen is honoured, as required.
-const isLate = (checkInHMS, shift) => {
-  if (!shift || shift.startMins == null) return false
-  return toMins(checkInHMS) > shift.startMins + shift.graceMins
-}
-
 // Resolve the calendar range [from,to] (YYYY-MM-DD) for a personal-summary
 // query. Supports an explicit custom range (from/to), a specific month
 // (year + 0-based month), a whole year (year only), or defaults to the
 // current calendar month. Pure date math — no data access.
 function resolveRange(query = {}, timezone = DEFAULT_TIMEZONE) {
-  const safeTimezone = getTimezone(timezone)
   const now = new Date()
-  const pad = (n) => String(n).padStart(2, '0')
-
-  if (query.from && query.to) {
-    return { from: String(query.from), to: String(query.to) }
-  }
-
-  const parts = new Intl.DateTimeFormat('en-US', {
+  const safeTimezone = getTimezone(timezone)
+  const localParts = new Intl.DateTimeFormat('en-US', {
     timeZone: safeTimezone,
     year: 'numeric',
     month: 'numeric',
   }).formatToParts(now)
 
   const values = Object.fromEntries(
-    parts.filter((part) => part.type !== 'literal').map((part) => [part.type, part.value]),
+    localParts
+      .filter((part) => part.type !== 'literal')
+      .map((part) => [part.type, part.value]),
   )
 
   const currentYear = Number(values.year)
   const currentMonth = Number(values.month) - 1
+  const pad = (n) => String(n).padStart(2, '0')
+
+  if (query.from && query.to) {
+    return { from: String(query.from), to: String(query.to) }
+  }
+
   const year = Number(query.year) || currentYear
 
   if (query.month != null && query.month !== '') {
@@ -171,7 +97,10 @@ function resolveRange(query = {}, timezone = DEFAULT_TIMEZONE) {
     return { from: `${year}-01-01`, to: `${year}-12-31` }
   }
 
-  const last = new Date(Date.UTC(currentYear, currentMonth + 1, 0)).getUTCDate()
+  const last = new Date(
+    Date.UTC(currentYear, currentMonth + 1, 0),
+  ).getUTCDate()
+
   return {
     from: `${currentYear}-${pad(currentMonth + 1)}-01`,
     to: `${currentYear}-${pad(currentMonth + 1)}-${pad(last)}`,
@@ -209,12 +138,8 @@ export const attendanceService = {
     // Build a shift-name -> contracted hours map from the Shift collection.
     const shiftDocs = await Shift.find().select('name hours -_id').lean()
     const shiftHours = {}
-    shiftDocs.forEach((s) => { shiftHours[s.name] = typeof s.hours === 'number' ? s.hours : DEFAULT_SHIFT_HOURS })
-    // PHASE ADMIN ATTENDANCE (TASK 1): the fallback is now the shared schema
-    // default constant rather than a bare literal. It is only reached when the
-    // record's shift name has no matching Shift document — and check-in now
-    // stamps the canonical Shift.name, so that path is the legacy-record case.
-    const hoursForShift = (name) => (name != null && shiftHours[name] != null ? shiftHours[name] : DEFAULT_SHIFT_HOURS)
+    shiftDocs.forEach((s) => { shiftHours[s.name] = typeof s.hours === 'number' ? s.hours : 9 })
+    const hoursForShift = (name) => (name != null && shiftHours[name] != null ? shiftHours[name] : 9)
 
     const worked = records.filter((r) => (r.workingHours || 0) > 0)
     const workingDays = worked.length
@@ -257,7 +182,7 @@ export const attendanceService = {
     // A period that has not finished yet (typically the current month, whose
     // range runs to the last calendar day) must only be judged up to TODAY -
     // future working days are not absences and must never be deducted.
-    const todayKey = attendanceToday(timezone)
+    const todayKey = todayInTimezone(timezone)
     const elapsedTo = to > todayKey ? todayKey : to
     const elapsedWorkingDays = countWorkingDays(from, elapsedTo, holidaySet)
 
@@ -295,10 +220,9 @@ export const attendanceService = {
   },
 
   async dayRecords(query) {
-    const { search = '', department, status, page = 1, limit = 10 } = query
-    const timezone = resolveAttendanceTimezone(query.timezone)
-    const date = query.date || attendanceToday(timezone)
-    const filter = { date }
+    const { search = '', department, status, date, timezone = DEFAULT_TIMEZONE, page = 1, limit = 10 } = query
+    const resolvedDate = date || todayInTimezone(timezone)
+    const filter = { date: resolvedDate }
     if (department) filter.department = department
     if (status) filter.status = status
     if (search) filter.$or = [
@@ -325,40 +249,67 @@ export const attendanceService = {
   // consumer is unaffected).
   async getToday(user) {
     const timezone = resolveAttendanceTimezone(user?.timezone)
-    const date = attendanceToday(timezone)
-    const doc = await Attendance.findOne({ employee: user.name, date }).lean()
+    const date = todayInTimezone(timezone)
+
+    let doc = await Attendance.findOne({
+      employee: user.name,
+      date,
+    }).lean()
+
+    // If the user's timezone was changed after check-in, find the latest
+    // currently-open record as a safe fallback.
+    if (!doc) {
+      doc = await Attendance.findOne({
+        employee: user.name,
+        checkIn: { $exists: true, $ne: null },
+        checkOut: { $exists: false },
+      }).sort({ checkInAt: -1 }).lean()
+    }
 
     if (!doc) return doc
+
     return { ...doc, breakStartedAt: openBreakStart(doc) }
   },
 
   async checkIn(user, { timezone: timezoneInput } = {}) {
     assertMarksAttendance(user)
 
-    const timezone = resolveAttendanceTimezone(timezoneInput, user?.timezone)
+    const timezone = resolveAttendanceTimezone(
+      timezoneInput,
+      user?.timezone,
+    )
+
     const ts = new Date()
-    const date = getLocalDate(ts, timezone)
+    const date = todayInTimezone(timezone)
+    const checkIn = nowHMSInTimezone(ts, timezone)
 
-    const existing = await Attendance.findOne({ employee: user.name, date })
-    if (existing?.checkIn) throw new ApiError(409, 'Already checked in today')
+    const existing = await Attendance.findOne({
+      employee: user.name,
+      date,
+    })
 
-    const checkIn = getLocalTime(ts, timezone)
-    const doc = existing || new Attendance({ employee: user.name, empCode: user.empCode, department: user.department, date })
-    // Read the employee's configured shift from MongoDB and judge the check-in
-    // against it (see the block comment above resolveShiftForUser).
-    const shift = await resolveShiftForUser(user, doc.shift)
-    const late = isLate(checkIn, shift)
+    if (existing?.checkIn) {
+      throw new ApiError(409, 'Already checked in today')
+    }
+
+    const late = toMins(checkIn) > 9 * 60 + 15
+
+    const doc =
+      existing ||
+      new Attendance({
+        employee: user.name,
+        empCode: user.empCode,
+        department: user.department,
+        date,
+      })
+
     doc.checkIn = checkIn
     doc.checkInAt = ts
     doc.checkInSeconds = nowEpoch()
     doc.timezone = timezone
-    // Stamp the CANONICAL Shift.name onto the record so every downstream figure
-    // that looks contracted hours up by shift name (mySummary's overtime, the
-    // attendance reports) resolves the employee's real shift instead of the
-    // schema default. Left untouched when the Shift collection cannot answer.
-    if (shift.name) doc.shift = shift.name
     doc.late = late
     doc.status = late ? 'Late' : 'Present'
+
     await doc.save()
     return doc
   },
@@ -366,12 +317,19 @@ export const attendanceService = {
   async checkOut(user, { timezone: timezoneInput } = {}) {
     assertMarksAttendance(user)
 
-    const fallbackTimezone = resolveAttendanceTimezone(timezoneInput, user?.timezone)
-    const fallbackDate = attendanceToday(fallbackTimezone)
+    const fallbackTimezone = resolveAttendanceTimezone(
+      timezoneInput,
+      user?.timezone,
+    )
 
-    let doc = await Attendance.findOne({ employee: user.name, date: fallbackDate })
+    const fallbackDate = todayInTimezone(fallbackTimezone)
 
-    // If the user's timezone changed after check-in, find the latest open record.
+    let doc = await Attendance.findOne({
+      employee: user.name,
+      date: fallbackDate,
+    })
+
+    // Safe fallback for a record that was opened before a timezone change.
     if (!doc) {
       doc = await Attendance.findOne({
         employee: user.name,
@@ -380,39 +338,69 @@ export const attendanceService = {
       }).sort({ checkInAt: -1 })
     }
 
-    if (!doc?.checkIn) throw new ApiError(400, 'You have not checked in yet')
-    if (doc.checkOut) throw new ApiError(409, 'Already checked out')
+    if (!doc?.checkIn) {
+      throw new ApiError(400, 'You have not checked in yet')
+    }
 
-    const timezone = resolveAttendanceTimezone(doc.timezone, fallbackTimezone)
+    if (doc.checkOut) {
+      throw new ApiError(409, 'Already checked out')
+    }
+
+    const timezone = resolveAttendanceTimezone(
+      doc.timezone,
+      fallbackTimezone,
+    )
+
     const ts = new Date()
-
-    doc.checkOut = getLocalTime(ts, timezone)
+    doc.checkOut = nowHMSInTimezone(ts, timezone)
     doc.checkOutAt = ts
     doc.checkOutSeconds = nowEpoch()
 
+    // Close any still-open break, then total all break time precisely.
     const openBreak = [...(doc.breaks || [])].reverse().find((b) => !b.end)
+
     if (openBreak) {
       openBreak.end = ts
-      openBreak.seconds = Math.max(0, Math.floor((ts - new Date(openBreak.start)) / 1000))
+      openBreak.seconds = Math.max(
+        0,
+        Math.floor((ts - new Date(openBreak.start)) / 1000),
+      )
     }
 
-    doc.breakSecs = (doc.breaks || []).reduce((s, b) => s + (b.seconds || 0), 0)
+    doc.breakSecs = (doc.breaks || []).reduce(
+      (s, b) => s + (b.seconds || 0),
+      0,
+    )
+
     doc.breakMins = Math.round(doc.breakSecs / 60)
     doc.onBreak = false
 
     const breakSecs = doc.breakSecs
-    doc.durationSecs = Math.max(0, (doc.checkOutSeconds || 0) - (doc.checkInSeconds || 0) - breakSecs)
-    doc.workingHours = Math.max(0, +(doc.durationSecs / 3600).toFixed(1))
 
-    const shift = await resolveShiftForUser(user, doc.shift)
-    if (shift.name) doc.shift = shift.name
+    // Duration is calculated from absolute UTC instants, so it is independent
+    // of the Render server timezone.
+    doc.durationSecs = Math.max(
+      0,
+      (doc.checkOutSeconds || 0) -
+      (doc.checkInSeconds || 0) -
+      breakSecs,
+    )
 
-    doc.earlyExit = shift.endMins != null && toMins(doc.checkOut) < shift.endMins
-    doc.overtimeHours = doc.workingHours > shift.hours
-      ? +(doc.workingHours - shift.hours).toFixed(1)
-      : 0
+    doc.workingHours = Math.max(
+      0,
+      +(doc.durationSecs / 3600).toFixed(1),
+    )
 
-    if (doc.earlyExit && !doc.late) doc.status = 'Early Exit'
+    // This is a wall-clock business rule, therefore use the localized checkout.
+    doc.earlyExit = toMins(doc.checkOut) < 17 * 60
+    doc.overtimeHours =
+      doc.workingHours > 9
+        ? +(doc.workingHours - 9).toFixed(1)
+        : 0
+
+    if (doc.earlyExit && !doc.late) {
+      doc.status = 'Early Exit'
+    }
 
     await doc.save()
     return doc
@@ -421,10 +409,17 @@ export const attendanceService = {
   async toggleBreak(user, { onBreak, timezone: timezoneInput } = {}) {
     assertMarksAttendance(user)
 
-    const fallbackTimezone = resolveAttendanceTimezone(timezoneInput, user?.timezone)
-    const date = attendanceToday(fallbackTimezone)
+    const timezone = resolveAttendanceTimezone(
+      timezoneInput,
+      user?.timezone,
+    )
 
-    let doc = await Attendance.findOne({ employee: user.name, date })
+    const date = todayInTimezone(timezone)
+
+    let doc = await Attendance.findOne({
+      employee: user.name,
+      date,
+    })
 
     if (!doc) {
       doc = await Attendance.findOne({
@@ -437,14 +432,13 @@ export const attendanceService = {
     if (!doc) throw new ApiError(400, 'No active attendance record')
     if (!doc.checkIn) throw new ApiError(400, 'You have not checked in yet')
     if (doc.checkOut) throw new ApiError(409, 'Already checked out')
-
     const now = new Date()
-
     if (onBreak) {
-      const alreadyOpen = (doc.breaks || []).some((b) => b && !b.end)
-      if (!alreadyOpen) doc.breaks.push({ start: now })
+      // Break start: open a new session (idempotent if already on break).
+      if (!doc.onBreak) doc.breaks.push({ start: now })
       doc.onBreak = true
     } else {
+      // Break end: close the last open session and accumulate its duration.
       const openBreak = [...(doc.breaks || [])].reverse().find((b) => !b.end)
       if (openBreak) {
         openBreak.end = now
@@ -452,60 +446,30 @@ export const attendanceService = {
       }
       doc.onBreak = false
     }
-
     doc.breakSecs = (doc.breaks || []).reduce((s, b) => s + (b.seconds || 0), 0)
     doc.breakMins = Math.round(doc.breakSecs / 60)
     await doc.save()
-
+    // Phase 6.9 (TASK 1): `breakStartedAt` is additive - it hands the client the
+    // authoritative anchor for the break that was just started (null on stop),
+    // so the UI clock is derived from a server timestamp rather than guessed.
     return {
       onBreak: doc.onBreak,
       breakMins: doc.breakMins,
       breakSecs: doc.breakSecs,
       breaks: doc.breaks,
       breakStartedAt: openBreakStart(doc),
-      timezone: doc.timezone || fallbackTimezone,
     }
   },
 
-  // PHASE 6 (TASK 3) - THE ATTENDANCE CALENDAR NOW HONOURS A MONTH.
-  //
-  // ROOT CAUSE (server half): this read EVERY Attendance document the employee
-  // has ever had and returned one flat { 'YYYY-MM-DD': status } map. It took no
-  // query at all, so the endpoint had no notion of "which month am I looking
-  // at?" - the client could only ever receive the same blob and re-slice it.
-  // Combined with a single ['attendance-calendar'] React Query key on the
-  // client, changing month could not possibly refetch anything.
-  //
-  // It now accepts the SAME range vocabulary the rest of this service already
-  // speaks, through the EXISTING resolveRange() helper (from/to | year+month |
-  // year | current month) - no second date utility is introduced.
-  //
-  // TIMEZONE: Attendance.date is stored as a plain 'YYYY-MM-DD' STRING (see
-  // models/attendanceModels.js), and resolveRange builds plain 'YYYY-MM-DD'
-  // strings too, so this is a pure lexicographic string comparison. No Date
-  // object is constructed on either side of the boundary, which is exactly why
-  // 2026-08-01 cannot drift to 2026-07-31 under a UTC conversion.
-  //
-  // BACKWARD COMPATIBLE: with no range params the behaviour is unchanged - the
-  // whole history is returned, so any existing caller keeps working.
-  async calendar(user, query = {}) {
-    const filter = { employee: user.name }
-    const hasRange = ['from', 'to', 'year', 'month'].some(
-      (k) => query[k] != null && query[k] !== ''
-    )
-    if (hasRange) {
-      const timezone = resolveAttendanceTimezone(query.timezone, user?.timezone)
-      const { from, to } = resolveRange(query, timezone)
-      filter.date = { $gte: from, $lte: to }
-    }
-    const records = await Attendance.find(filter).select('date status -_id').lean()
+  async calendar(user) {
+    const records = await Attendance.find({ employee: user.name }).select('date status -_id').lean()
     return records.reduce((acc, r) => { acc[r.date] = r.status; return acc }, {})
   },
 
   // Aggregated analytics for a given day (default today).
   async stats(query = {}) {
     const timezone = resolveAttendanceTimezone(query.timezone)
-    const date = query.date || attendanceToday(timezone)
+    const date = query.date || todayInTimezone(timezone)
     const records = await Attendance.find({ date }).lean()
     const count = (s) => records.filter((r) => r.status === s).length
     const present = count('Present'), late = count('Late'), earlyExit = count('Early Exit')

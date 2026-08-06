@@ -1,6 +1,12 @@
 import { Attendance, Shift, Holiday } from '../models/attendanceModels.js'
 import { User } from '../models/User.js'
 import { ApiError } from '../utils/asyncHandler.js'
+import {
+  DEFAULT_TIMEZONE,
+  getTimezone,
+  getLocalDate,
+  getLocalTime,
+} from '../utils/timezone.js'
 // Phase 6.12 (TASK 10): the EXISTING single source of truth for working-day
 // arithmetic (Sundays + Company Holidays excluded). It is imported, not
 // re-implemented, so payroll counts a working day exactly the way leave apply,
@@ -28,9 +34,19 @@ function openBreakStart(doc) {
   return open ? open.start : null
 }
 
-const today = () => new Date().toISOString().slice(0, 10)
-const nowHMS = () => new Date().toTimeString().slice(0, 8)
 const nowEpoch = () => Math.floor(Date.now() / 1000)
+
+function resolveAttendanceTimezone(explicitTimezone, userTimezone) {
+  return getTimezone(explicitTimezone || userTimezone || DEFAULT_TIMEZONE)
+}
+
+function todayInTimezone(timezone) {
+  return getLocalDate(new Date(), timezone)
+}
+
+function nowHMSInTimezone(date, timezone) {
+  return getLocalTime(date, timezone)
+}
 
 // Parse "HH:mm" to minutes-since-midnight.
 const toMins = (hm) => {
@@ -43,22 +59,52 @@ const toMins = (hm) => {
 // query. Supports an explicit custom range (from/to), a specific month
 // (year + 0-based month), a whole year (year only), or defaults to the
 // current calendar month. Pure date math — no data access.
-function resolveRange(query = {}) {
+function resolveRange(query = {}, timezone = DEFAULT_TIMEZONE) {
   const now = new Date()
+  const safeTimezone = getTimezone(timezone)
+  const localParts = new Intl.DateTimeFormat('en-US', {
+    timeZone: safeTimezone,
+    year: 'numeric',
+    month: 'numeric',
+  }).formatToParts(now)
+
+  const values = Object.fromEntries(
+    localParts
+      .filter((part) => part.type !== 'literal')
+      .map((part) => [part.type, part.value]),
+  )
+
+  const currentYear = Number(values.year)
+  const currentMonth = Number(values.month) - 1
   const pad = (n) => String(n).padStart(2, '0')
-  if (query.from && query.to) return { from: String(query.from), to: String(query.to) }
-  const year = Number(query.year) || now.getFullYear()
-  if (query.month != null && query.month !== '') {
-    const m = Number(query.month) // 0-based
-    const last = new Date(year, m + 1, 0).getDate()
-    return { from: `${year}-${pad(m + 1)}-01`, to: `${year}-${pad(m + 1)}-${pad(last)}` }
+
+  if (query.from && query.to) {
+    return { from: String(query.from), to: String(query.to) }
   }
+
+  const year = Number(query.year) || currentYear
+
+  if (query.month != null && query.month !== '') {
+    const m = Number(query.month)
+    const last = new Date(Date.UTC(year, m + 1, 0)).getUTCDate()
+    return {
+      from: `${year}-${pad(m + 1)}-01`,
+      to: `${year}-${pad(m + 1)}-${pad(last)}`,
+    }
+  }
+
   if (query.year && query.month == null) {
     return { from: `${year}-01-01`, to: `${year}-12-31` }
   }
-  const m = now.getMonth()
-  const last = new Date(year, m + 1, 0).getDate()
-  return { from: `${year}-${pad(m + 1)}-01`, to: `${year}-${pad(m + 1)}-${pad(last)}` }
+
+  const last = new Date(
+    Date.UTC(currentYear, currentMonth + 1, 0),
+  ).getUTCDate()
+
+  return {
+    from: `${currentYear}-${pad(currentMonth + 1)}-01`,
+    to: `${currentYear}-${pad(currentMonth + 1)}-${pad(last)}`,
+  }
 }
 
 // Attendance service: personal + org queries, check-in/out/break, analytics.
@@ -85,7 +131,8 @@ export const attendanceService = {
   // name), defaulting to 9h when a shift is unknown. Never org-wide, never
   // fabricated.
   async mySummary(user, query = {}) {
-    const { from, to } = resolveRange(query)
+    const timezone = resolveAttendanceTimezone(query.timezone, user?.timezone)
+    const { from, to } = resolveRange(query, timezone)
     const records = await Attendance.find({ employee: user.name, date: { $gte: from, $lte: to } }).lean()
 
     // Build a shift-name -> contracted hours map from the Shift collection.
@@ -135,7 +182,7 @@ export const attendanceService = {
     // A period that has not finished yet (typically the current month, whose
     // range runs to the last calendar day) must only be judged up to TODAY -
     // future working days are not absences and must never be deducted.
-    const todayKey = today()
+    const todayKey = todayInTimezone(timezone)
     const elapsedTo = to > todayKey ? todayKey : to
     const elapsedWorkingDays = countWorkingDays(from, elapsedTo, holidaySet)
 
@@ -173,8 +220,9 @@ export const attendanceService = {
   },
 
   async dayRecords(query) {
-    const { search = '', department, status, date = today(), page = 1, limit = 10 } = query
-    const filter = { date }
+    const { search = '', department, status, date, timezone = DEFAULT_TIMEZONE, page = 1, limit = 10 } = query
+    const resolvedDate = date || todayInTimezone(timezone)
+    const filter = { date: resolvedDate }
     if (department) filter.department = department
     if (status) filter.status = status
     if (search) filter.$or = [
@@ -200,62 +248,187 @@ export const attendanceService = {
   // pre-existing response key is unchanged (purely additive, so any existing
   // consumer is unaffected).
   async getToday(user) {
-    const doc = await Attendance.findOne({ employee: user.name, date: today() }).lean()
+    const timezone = resolveAttendanceTimezone(user?.timezone)
+    const date = todayInTimezone(timezone)
+
+    let doc = await Attendance.findOne({
+      employee: user.name,
+      date,
+    }).lean()
+
+    // If the user's timezone was changed after check-in, find the latest
+    // currently-open record as a safe fallback.
+    if (!doc) {
+      doc = await Attendance.findOne({
+        employee: user.name,
+        checkIn: { $exists: true, $ne: null },
+        checkOut: { $exists: false },
+      }).sort({ checkInAt: -1 }).lean()
+    }
+
     if (!doc) return doc
+
     return { ...doc, breakStartedAt: openBreakStart(doc) }
   },
 
-  async checkIn(user, { timezone } = {}) {
+  async checkIn(user, { timezone: timezoneInput } = {}) {
     assertMarksAttendance(user)
-    const date = today()
-    const existing = await Attendance.findOne({ employee: user.name, date })
-    if (existing?.checkIn) throw new ApiError(409, 'Already checked in today')
-    const checkIn = nowHMS()
+
+    const timezone = resolveAttendanceTimezone(
+      timezoneInput,
+      user?.timezone,
+    )
+
     const ts = new Date()
-    const late = toMins(checkIn) > 9 * 60 + 15 // after 09:15 grace
-    const doc = existing || new Attendance({ employee: user.name, empCode: user.empCode, department: user.department, date })
+    const date = todayInTimezone(timezone)
+    const checkIn = nowHMSInTimezone(ts, timezone)
+
+    const existing = await Attendance.findOne({
+      employee: user.name,
+      date,
+    })
+
+    if (existing?.checkIn) {
+      throw new ApiError(409, 'Already checked in today')
+    }
+
+    const late = toMins(checkIn) > 9 * 60 + 15
+
+    const doc =
+      existing ||
+      new Attendance({
+        employee: user.name,
+        empCode: user.empCode,
+        department: user.department,
+        date,
+      })
+
     doc.checkIn = checkIn
     doc.checkInAt = ts
     doc.checkInSeconds = nowEpoch()
-    doc.timezone = timezone || Intl.DateTimeFormat().resolvedOptions().timeZone
+    doc.timezone = timezone
     doc.late = late
     doc.status = late ? 'Late' : 'Present'
+
     await doc.save()
     return doc
   },
 
-  async checkOut(user) {
+  async checkOut(user, { timezone: timezoneInput } = {}) {
     assertMarksAttendance(user)
-    const date = today()
-    const doc = await Attendance.findOne({ employee: user.name, date })
-    if (!doc?.checkIn) throw new ApiError(400, 'You have not checked in yet')
-    if (doc.checkOut) throw new ApiError(409, 'Already checked out')
+
+    const fallbackTimezone = resolveAttendanceTimezone(
+      timezoneInput,
+      user?.timezone,
+    )
+
+    const fallbackDate = todayInTimezone(fallbackTimezone)
+
+    let doc = await Attendance.findOne({
+      employee: user.name,
+      date: fallbackDate,
+    })
+
+    // Safe fallback for a record that was opened before a timezone change.
+    if (!doc) {
+      doc = await Attendance.findOne({
+        employee: user.name,
+        checkIn: { $exists: true, $ne: null },
+        checkOut: { $exists: false },
+      }).sort({ checkInAt: -1 })
+    }
+
+    if (!doc?.checkIn) {
+      throw new ApiError(400, 'You have not checked in yet')
+    }
+
+    if (doc.checkOut) {
+      throw new ApiError(409, 'Already checked out')
+    }
+
+    const timezone = resolveAttendanceTimezone(
+      doc.timezone,
+      fallbackTimezone,
+    )
+
     const ts = new Date()
-    doc.checkOut = nowHMS()
+    doc.checkOut = nowHMSInTimezone(ts, timezone)
     doc.checkOutAt = ts
     doc.checkOutSeconds = nowEpoch()
+
     // Close any still-open break, then total all break time precisely.
     const openBreak = [...(doc.breaks || [])].reverse().find((b) => !b.end)
+
     if (openBreak) {
       openBreak.end = ts
-      openBreak.seconds = Math.max(0, Math.floor((ts - new Date(openBreak.start)) / 1000))
+      openBreak.seconds = Math.max(
+        0,
+        Math.floor((ts - new Date(openBreak.start)) / 1000),
+      )
     }
-    doc.breakSecs = (doc.breaks || []).reduce((s, b) => s + (b.seconds || 0), 0)
+
+    doc.breakSecs = (doc.breaks || []).reduce(
+      (s, b) => s + (b.seconds || 0),
+      0,
+    )
+
     doc.breakMins = Math.round(doc.breakSecs / 60)
     doc.onBreak = false
+
     const breakSecs = doc.breakSecs
-    doc.durationSecs = Math.max(0, (doc.checkOutSeconds || 0) - (doc.checkInSeconds || 0) - breakSecs)
-    doc.workingHours = Math.max(0, +(doc.durationSecs / 3600).toFixed(1))
-    doc.earlyExit = toMins(doc.checkOut) < 17 * 60 // before 17:00
-    doc.overtimeHours = doc.workingHours > 9 ? +(doc.workingHours - 9).toFixed(1) : 0
-    if (doc.earlyExit && !doc.late) doc.status = 'Early Exit'
+
+    // Duration is calculated from absolute UTC instants, so it is independent
+    // of the Render server timezone.
+    doc.durationSecs = Math.max(
+      0,
+      (doc.checkOutSeconds || 0) -
+      (doc.checkInSeconds || 0) -
+      breakSecs,
+    )
+
+    doc.workingHours = Math.max(
+      0,
+      +(doc.durationSecs / 3600).toFixed(1),
+    )
+
+    // This is a wall-clock business rule, therefore use the localized checkout.
+    doc.earlyExit = toMins(doc.checkOut) < 17 * 60
+    doc.overtimeHours =
+      doc.workingHours > 9
+        ? +(doc.workingHours - 9).toFixed(1)
+        : 0
+
+    if (doc.earlyExit && !doc.late) {
+      doc.status = 'Early Exit'
+    }
+
     await doc.save()
     return doc
   },
 
-  async toggleBreak(user, { onBreak }) {
+  async toggleBreak(user, { onBreak, timezone: timezoneInput } = {}) {
     assertMarksAttendance(user)
-    const doc = await Attendance.findOne({ employee: user.name, date: today() })
+
+    const timezone = resolveAttendanceTimezone(
+      timezoneInput,
+      user?.timezone,
+    )
+
+    const date = todayInTimezone(timezone)
+
+    let doc = await Attendance.findOne({
+      employee: user.name,
+      date,
+    })
+
+    if (!doc) {
+      doc = await Attendance.findOne({
+        employee: user.name,
+        checkIn: { $exists: true, $ne: null },
+        checkOut: { $exists: false },
+      }).sort({ checkInAt: -1 })
+    }
+
     if (!doc) throw new ApiError(400, 'No active attendance record')
     if (!doc.checkIn) throw new ApiError(400, 'You have not checked in yet')
     if (doc.checkOut) throw new ApiError(409, 'Already checked out')
@@ -295,7 +468,8 @@ export const attendanceService = {
 
   // Aggregated analytics for a given day (default today).
   async stats(query = {}) {
-    const date = query.date || today()
+    const timezone = resolveAttendanceTimezone(query.timezone)
+    const date = query.date || todayInTimezone(timezone)
     const records = await Attendance.find({ date }).lean()
     const count = (s) => records.filter((r) => r.status === s).length
     const present = count('Present'), late = count('Late'), earlyExit = count('Early Exit')

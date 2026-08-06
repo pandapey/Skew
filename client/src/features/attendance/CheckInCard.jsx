@@ -121,7 +121,13 @@ export function useAttendanceSession() {
   const qc = useQueryClient()
 
   // Local IANA timezone of the user's machine, sent to the backend on check-in.
-  const timezone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone, [])
+  const timezone = useMemo(() => {
+    try {
+      return Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata'
+    } catch {
+      return 'Asia/Kolkata'
+    }
+  }, [])
 
   // Phase 6.9 (TASK 1): today's record lives in the SHARED query cache, so it
   // is already present when a consumer remounts after navigation. Refetching on
@@ -171,7 +177,7 @@ export function useAttendanceSession() {
   })
 
   const checkOutMut = useMutation({
-    mutationFn: () => attendanceApi.checkOut(),
+    mutationFn: () => attendanceApi.checkOut({ timezone }),
     onSuccess: (res) => {
       patchRecord(res)
       toast.success(`Checked out at ${res.checkOut}`); refreshLists()
@@ -180,7 +186,7 @@ export function useAttendanceSession() {
   })
 
   const breakMut = useMutation({
-    mutationFn: () => attendanceApi.toggleBreak({ onBreak: !anchors.onBreak }),
+    mutationFn: () => attendanceApi.toggleBreak({ onBreak: !anchors.onBreak, timezone }),
     onSuccess: (res) => {
       const nowOnBreak = !anchors.onBreak
       // The service returns { onBreak, breakMins, breakSecs, breaks, breakStartedAt }.

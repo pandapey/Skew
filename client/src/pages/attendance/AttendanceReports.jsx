@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
   FiUsers, FiUserCheck, FiUserX, FiAlertCircle, FiZap, FiTrendingUp,
@@ -17,11 +17,21 @@ import { ATTENDANCE_STATUS, STATUS_TONE } from '@/features/attendance/constants'
 export default function AttendanceReports() {
   const [params, setParams] = useState({ search: '', department: '', status: '', page: 1, limit: 10 })
   const debounced = useDebounce(params.search)
+  const timezone = useMemo(() => {
+    try {
+      return Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata'
+    } catch {
+      return 'Asia/Kolkata'
+    }
+  }, [])
 
-  const { data: stats, isLoading: statsLoading } = useQuery({ queryKey: ['attendance-stats'], queryFn: attendanceApi.stats })
+  const { data: stats, isLoading: statsLoading } = useQuery({
+    queryKey: ['attendance-stats', timezone],
+    queryFn: () => attendanceApi.stats({ timezone }),
+  })
   const { data, isLoading } = useQuery({
-    queryKey: ['attendance-day', { ...params, search: debounced }],
-    queryFn: () => attendanceApi.dayRecords({ ...params, search: debounced }),
+    queryKey: ['attendance-day', { ...params, search: debounced, timezone }],
+    queryFn: () => attendanceApi.dayRecords({ ...params, search: debounced, timezone }),
   })
   const rows = data?.data ?? []
   const setParam = (patch) => setParams((p) => ({ ...p, ...patch, page: 1 }))

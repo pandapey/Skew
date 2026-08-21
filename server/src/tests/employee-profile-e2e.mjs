@@ -13,7 +13,7 @@ import { User } from '../models/User.js'
 import { Employee } from '../models/Employee.js'
 import { FileItem } from '../models/fileModels.js'
 
-const API = 'http://localhost:5000/api'
+const API = 'https://skew-server-317n.onrender.com/api'
 const TEMP = [
   { email: 'prof-e1@skew.com', password: 'ProfE1#1', role: 'Employee', name: 'Prof Employee One', department: 'Engineering', designation: 'Tester' },
   { email: 'prof-e2@skew.com', password: 'ProfE2#1', role: 'Employee', name: 'Prof Employee Two', department: 'Engineering', designation: 'Tester' },

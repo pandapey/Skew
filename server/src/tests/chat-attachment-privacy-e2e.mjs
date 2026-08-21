@@ -10,7 +10,7 @@ import { User } from '../models/User.js'
 import { Conversation, Message } from '../models/chatModels.js'
 import { FileItem } from '../models/fileModels.js'
 
-const API = 'http://localhost:5000/api'
+const API = 'https://skew-server-317n.onrender.com/api'
 const TEMP = [
   { email: 'priv-a@skew.com', password: 'PrivA#1', role: 'Employee', name: 'Priv A', department: 'Engineering', designation: 'Tester' },
   { email: 'priv-b@skew.com', password: 'PrivB#1', role: 'Employee', name: 'Priv B', department: 'Engineering', designation: 'Tester' },

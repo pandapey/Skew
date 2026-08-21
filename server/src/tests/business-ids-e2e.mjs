@@ -18,7 +18,7 @@ import { User } from '../models/User.js'
 import { Employee } from '../models/Employee.js'
 import { Project } from '../models/projectModels.js'
 
-const API = 'http://localhost:5000/api'
+const API = 'https://skew-server-317n.onrender.com/api'
 const results = []
 const check = (name, ok, detail = '') => {
   results.push({ name, ok: !!ok, detail })

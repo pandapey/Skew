@@ -3,7 +3,7 @@ import { getAuthToken } from './client'
 
 const URL = import.meta.env.VITE_API_BASE_URL
   ? import.meta.env.VITE_API_BASE_URL.replace(/\/api\/?$/, '')
-  : 'http://localhost:5000'
+  : 'https://skew-server-317n.onrender.com'
 
 let socket = null
 

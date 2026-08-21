@@ -10,7 +10,7 @@ import { FileItem, Folder } from '../models/fileModels.js'
 import { Project, ProjectTask } from '../models/projectModels.js'
 import { Conversation, Message } from '../models/chatModels.js'
 
-const API = 'http://localhost:5000/api'
+const API = 'https://skew-server-317n.onrender.com/api'
 const results = []
 const check = (name, ok, detail = '') => {
   results.push({ name, ok: !!ok, detail })

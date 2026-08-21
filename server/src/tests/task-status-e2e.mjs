@@ -9,7 +9,7 @@ import { User } from '../models/User.js'
 import { Project, ProjectTask, ProjectActivity } from '../models/projectModels.js'
 import { Notification } from '../models/notificationModels.js'
 
-const API = 'http://localhost:5000/api'
+const API = 'https://skew-server-317n.onrender.com/api'
 const TEMP = [
   { email: 'e2e-ts-admin@skew.com', password: 'E2eTsAdmin#1', role: 'Admin', name: 'TS E2E Admin', department: 'Management', designation: 'Tester' },
   { email: 'e2e-ts-a@skew.com', password: 'E2eTsA#1', role: 'Employee', name: 'TS E2E Emp A', department: 'Engineering', designation: 'Dev' },

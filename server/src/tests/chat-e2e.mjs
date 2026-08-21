@@ -11,7 +11,7 @@ import { Conversation, Message } from '../models/chatModels.js'
 import { FileItem } from '../models/fileModels.js'
 import { Notification } from '../models/notificationModels.js'
 
-const API = 'http://localhost:5000/api'
+const API = 'https://skew-server-317n.onrender.com/api'
 // Temp accounts created directly in MongoDB (the live DB's own users have
 // unknown passwords) and removed at the end. A freshly hashed password is
 // written straight to the User doc so /api/auth/login works against them.

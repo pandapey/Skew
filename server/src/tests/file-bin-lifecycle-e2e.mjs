@@ -11,7 +11,7 @@ import path from 'path'
 import { User } from '../models/User.js'
 import { FileItem, Folder } from '../models/fileModels.js'
 
-const API = 'http://localhost:5000/api'
+const API = 'https://skew-server-317n.onrender.com/api'
 const results = []
 const check = (name, ok, detail = '') => {
   results.push({ name, ok: !!ok, detail })

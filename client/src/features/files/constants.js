@@ -42,6 +42,6 @@ export function detectType(file) {
 export function fileUrl(url) {
   if (!url || typeof url !== 'string') return url
   if (/^(https?:|data:|blob:)/i.test(url)) return url
-  const base = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api').replace(/\/api$/, '')
+  const base = (import.meta.env.VITE_API_BASE_URL || 'https://skew-server-317n.onrender.com/api').replace(/\/api$/, '')
   return `${base}${url}`
 }

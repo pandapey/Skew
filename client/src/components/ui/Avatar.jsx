@@ -10,7 +10,7 @@ function resolveSrc(src) {
   if (!src || typeof src !== 'string') return src
   if (/^(https?:|data:|blob:)/i.test(src)) return src
   if (src.startsWith('/uploads')) {
-    const base = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api').replace(/\/api$/, '')
+    const base = (import.meta.env.VITE_API_BASE_URL || 'https://skew-server-317n.onrender.com/api').replace(/\/api$/, '')
     return `${base}${src}`
   }
   return src

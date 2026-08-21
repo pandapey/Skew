@@ -1,0 +1,559 @@
+// chatService.js — internal staff chat (Admin / HR / Manager / Employee).
+//
+// AUTHORIZATION MODEL (server-side only; the frontend hiding buttons is never
+// the enforcement):
+//   * Every conversation-scoped operation first loads the Conversation and
+//     asserts the caller is a participant (assertParticipant) — a user can
+//     only read/send in conversations they belong to.
+//   * Clients are rejected at the router (blockClient) AND here: participants
+//     are resolved from the live User collection and any Client-role user is
+//     rejected, so a forged payload cannot smuggle a client into a chat.
+//   * Group member management (add/remove) requires the group creator or an
+//     Admin-role user (canManageGroup). The creator cannot be removed and a
+//     member cannot remove themselves through the remove endpoint (use /leave).
+//
+// REALTIME: this is NOT a second realtime system — it reuses the project's
+// single Socket.IO instance (realtime/index.js) via emitToUsers, which targets
+// the per-user rooms (`user:<id>`) that the existing socket auth already joins
+// for every staff member.
+//
+// NOTIFICATIONS: new messages fan out through the EXISTING notification engine
+// (notificationService.notifyUsersByEmail -> one private Notification per
+// recipient, honouring per-user NotificationSettings) with type 'chat' and a
+// link to /chat, so the navbar bell shows chat unread counts with no second
+// notification system.
+import { ApiError } from '../utils/asyncHandler.js'
+import { User } from '../models/User.js'
+import { Conversation, Message } from '../models/chatModels.js'
+import { FileItem } from '../models/fileModels.js'
+import { notifyUsersByEmail } from './notificationService.js'
+import { emitToUsers } from '../realtime/index.js'
+
+// The internal staff set. Clients are excluded from internal chat by design.
+const CHAT_ROLES = ['Admin', 'Manager', 'Employee']
+const MESSAGE_PREVIEW_LENGTH = 80
+const DEFAULT_MESSAGE_LIMIT = 50
+const MAX_MESSAGE_LIMIT = 200
+
+const isObjectId = (v) => /^[0-9a-fA-F]{24}$/.test(String(v || ''))
+
+const compact = (user) => ({
+  _id: String(user._id),
+  name: user.name || '',
+  email: user.email || '',
+  role: user.role || 'Employee',
+  avatar: user.avatar || '',
+  empCode: user.empCode || '',
+  designation: user.designation || '',
+  department: user.department || '',
+})
+
+// ---------------------------------------------------------------------------
+// Internal directory — the picker for starting a new chat.
+// ---------------------------------------------------------------------------
+export async function listChatUsers() {
+  const users = await User.find({ role: { $in: CHAT_ROLES }, status: 'Active' })
+    .select('name email role avatar empCode designation department')
+    .sort({ name: 1 })
+    .lean()
+  return users.map(compact)
+}
+
+// ---------------------------------------------------------------------------
+// Authorization helpers
+// ---------------------------------------------------------------------------
+function assertObjectId(id, label = 'id') {
+  if (!isObjectId(id)) throw new ApiError(400, `Invalid ${label}`)
+}
+
+async function resolveInternalUser(userId) {
+  const user = await User.findById(userId).select('name email role avatar empCode designation department status').lean()
+  if (!user) throw new ApiError(404, 'User not found')
+  if (!CHAT_ROLES.includes(user.role)) throw new ApiError(403, 'Internal chat is available to staff only')
+  return user
+}
+
+async function loadConversation(conversationId) {
+  assertObjectId(conversationId, 'conversation id')
+  const conversation = await Conversation.findById(conversationId).lean()
+  if (!conversation) throw new ApiError(404, 'Conversation not found')
+  return conversation
+}
+
+function assertParticipant(conversation, userId) {
+  const member = (conversation.participants || []).some(
+    (p) => String(p.user) === String(userId)
+  )
+  if (!member) throw new ApiError(403, 'You are not a participant of this conversation')
+}
+
+function canManageGroup(conversation, user) {
+  if (conversation.type !== 'group') return false
+  if (String(conversation.createdBy) === String(user._id)) return true
+  if (user.role === 'Admin') return true
+  return false
+}
+
+async function unreadCount(conversationId, userId) {
+  return Message.countDocuments({
+    conversation: conversationId,
+    sender: { $ne: userId },
+    'readBy.user': { $ne: userId },
+  })
+}
+
+// ---------------------------------------------------------------------------
+// View builders
+// ---------------------------------------------------------------------------
+function otherParticipant(conversation, userId, participantsById) {
+  const target = (conversation.participants || []).find((p) => String(p.user) !== String(userId))
+  // `target` is a participant SUBDOCUMENT ({ user, role, addedBy, joinedAt }),
+  // not a User document — resolve its display identity from the preloaded
+  // participantsById map so `other` carries the real name/email/avatar.
+  return target ? (participantsById.get(String(target.user)) || null) : null
+}
+
+function buildConversationView(conversation, me, participantsById, unread) {
+  const isGroup = conversation.type === 'group'
+  const members = (conversation.participants || [])
+    .map((p) => participantsById.get(String(p.user)))
+    .filter(Boolean)
+  const other = otherParticipant(conversation, me, participantsById)
+  return {
+    _id: String(conversation._id),
+    type: conversation.type,
+    name: isGroup ? conversation.name : (other?.name || 'Unknown user'),
+    // `other` mirrors the display participant for direct chats (avatar/role).
+    other,
+    isGroup,
+    memberCount: members.length,
+    participants: members,
+    createdBy: conversation.createdBy ? String(conversation.createdBy) : null,
+    lastMessage: conversation.lastMessage
+      ? {
+          text: conversation.lastMessage.text || '',
+          sender: conversation.lastMessage.sender ? String(conversation.lastMessage.sender) : null,
+          senderName: conversation.lastMessage.senderName || '',
+          at: conversation.lastMessage.at || null,
+          hasAttachment: conversation.lastMessage.hasAttachment || false,
+        }
+      : null,
+    unreadCount: unread || 0,
+    updatedAt: conversation.updatedAt || conversation.createdAt || null,
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Conversations
+// ---------------------------------------------------------------------------
+export async function listConversations(userId) {
+  const conversations = await Conversation.find({ 'participants.user': userId })
+    .sort({ updatedAt: -1 })
+    .lean()
+
+  const participantIds = new Set()
+  conversations.forEach((c) => (c.participants || []).forEach((p) => participantIds.add(String(p.user))))
+  const users = await User.find({ _id: { $in: [...participantIds] } })
+    .select('name email role avatar empCode designation department')
+    .lean()
+  const participantsById = new Map(users.map((u) => [String(u._id), compact(u)]))
+
+  const views = await Promise.all(conversations.map(async (c) => {
+    const unread = await unreadCount(c._id, userId)
+    return buildConversationView(c, userId, participantsById, unread)
+  }))
+
+  // Direct conversations whose other participant has been removed from the
+  // system still render (identity from the snapshot); the service never lets
+  // a new conversation be created with a non-staff user.
+  return views
+}
+
+export async function getConversation(userId, conversationId) {
+  const conversation = await loadConversation(conversationId)
+  assertParticipant(conversation, userId)
+  const ids = (conversation.participants || []).map((p) => p.user)
+  const users = await User.find({ _id: { $in: ids } })
+    .select('name email role avatar empCode designation department')
+    .lean()
+  const participantsById = new Map(users.map((u) => [String(u._id), compact(u)]))
+  const unread = await unreadCount(conversation._id, userId)
+  return buildConversationView(conversation, userId, participantsById, unread)
+}
+
+// PHASE: EMPLOYEE CHAT (REQUIREMENT 7) — TOTAL unread messages across every
+// conversation the user is a participant of. Reuses the same per-conversation
+// unread rule (sender !== me, not in readBy) so the sidebar badge is the sum
+// of the per-conversation unreadCount values the Chat page already shows.
+export async function totalUnreadCount(userId) {
+  const conversations = await Conversation.find({ 'participants.user': userId }).select('_id').lean()
+  const count = await Message.countDocuments({
+    conversation: { $in: conversations.map((c) => c._id) },
+    sender: { $ne: userId },
+    'readBy.user': { $ne: userId },
+  })
+  return { count }
+}
+
+// ---------------------------------------------------------------------------
+// Direct conversations — find-or-create, never duplicated.
+// ---------------------------------------------------------------------------
+export async function getOrCreateDirectConversation(userId, otherUserId) {
+  assertObjectId(otherUserId, 'user id')
+  const me = await resolveInternalUser(userId)
+  const other = await resolveInternalUser(otherUserId)
+  if (String(me._id) === String(other._id)) {
+    throw new ApiError(400, 'You cannot start a conversation with yourself')
+  }
+
+  const existing = await Conversation.findOne({
+    type: 'direct',
+    participants: { $size: 2 },
+    'participants.user': { $all: [me._id, other._id] },
+  }).lean()
+  if (existing) return getConversation(userId, existing._id)
+
+  const conversation = await Conversation.create({
+    type: 'direct',
+    createdBy: me._id,
+    participants: [
+      { user: me._id, role: me.role },
+      { user: other._id, role: other.role },
+    ],
+  })
+  await emitToUsers([me._id, other._id], 'chat:conversation', { conversationId: String(conversation._id) })
+  return getConversation(userId, conversation._id)
+}
+
+// ---------------------------------------------------------------------------
+// Groups
+// ---------------------------------------------------------------------------
+export async function createGroup(userId, { name, memberIds = [] }) {
+  const me = await resolveInternalUser(userId)
+  const cleanName = String(name || '').trim()
+  if (!cleanName) throw new ApiError(400, 'Group name is required')
+  if (cleanName.length > 60) throw new ApiError(400, 'Group name is too long')
+
+  const requested = [...new Set((Array.isArray(memberIds) ? memberIds : []).map(String))]
+  const members = []
+  for (const id of requested) {
+    if (String(id) === String(me._id)) continue // creator is always a member
+    members.push(await resolveInternalUser(id))
+  }
+
+  const conversation = await Conversation.create({
+    type: 'group',
+    name: cleanName,
+    createdBy: me._id,
+    participants: [
+      { user: me._id, role: me.role, addedBy: me._id },
+      ...members.map((m) => ({ user: m._id, role: m.role, addedBy: me._id })),
+    ],
+  })
+  const ids = [me._id, ...members.map((m) => m._id)]
+  await emitToUsers(ids, 'chat:conversation', { conversationId: String(conversation._id) })
+  return getConversation(userId, conversation._id)
+}
+
+// ---------------------------------------------------------------------------
+// Messages
+// ---------------------------------------------------------------------------
+export async function listMessages(userId, conversationId, { before, limit } = {}) {
+  const conversation = await loadConversation(conversationId)
+  assertParticipant(conversation, userId)
+
+  const query = { conversation: conversation._id }
+  if (before) {
+    assertObjectId(before, 'before id')
+    query._id = { $lt: before }
+  }
+  const size = Math.min(Math.max(Number(limit) || DEFAULT_MESSAGE_LIMIT, 1), MAX_MESSAGE_LIMIT)
+  const messages = await Message.find(query)
+    .sort({ _id: -1 })
+    .limit(size)
+    .lean()
+
+  const senderIds = new Set(messages.map((m) => String(m.sender)))
+  const senders = await User.find({ _id: { $in: [...senderIds] } })
+    .select('name email role avatar')
+    .lean()
+  const senderById = new Map(senders.map((u) => [String(u._id), u]))
+
+  return messages.reverse().map((m) => ({
+    _id: String(m._id),
+    conversationId: String(m.conversation),
+    sender: String(m.sender),
+    senderName: senderById.get(String(m.sender))?.name || 'Unknown',
+    senderAvatar: senderById.get(String(m.sender))?.avatar || '',
+    text: m.text,
+    attachment: m.attachment || null,
+    readBy: (m.readBy || []).map((r) => String(r.user)),
+    createdAt: m.createdAt,
+  }))
+}
+
+export async function sendMessage(userId, conversationId, { text, attachment } = {}) {
+  const clean = String(text || '').trim()
+  const hasAttachment = Boolean(attachment && attachment.fileId)
+  if (!clean && !hasAttachment) {
+    throw new ApiError(400, 'Message text or an attachment is required')
+  }
+  if (clean.length > 5000) throw new ApiError(400, 'Message is too long')
+
+  const me = await resolveInternalUser(userId)
+  const conversation = await loadConversation(conversationId)
+  assertParticipant(conversation, userId)
+
+  const message = await Message.create({
+    conversation: conversation._id,
+    sender: me._id,
+    text: clean,
+    ...(hasAttachment ? { attachment } : {}),
+  })
+
+  const preview = clean
+    || (hasAttachment ? `📎 ${attachment.name || 'Attachment'}` : '')
+  await Conversation.updateOne(
+    { _id: conversation._id },
+    {
+      $set: {
+        lastMessage: {
+          text: preview.length > MESSAGE_PREVIEW_LENGTH
+            ? `${preview.slice(0, MESSAGE_PREVIEW_LENGTH)}…`
+            : preview,
+          sender: me._id,
+          senderName: me.name,
+          at: new Date(),
+          hasAttachment: hasAttachment,
+        },
+      },
+    }
+  )
+
+  const memberIds = (conversation.participants || []).map((p) => p.user)
+  const payload = {
+    conversationId: String(conversation._id),
+    message: {
+      _id: String(message._id),
+      sender: String(me._id),
+      senderName: me.name,
+      senderAvatar: me.avatar || '',
+      text: clean,
+      attachment: hasAttachment ? attachment : null,
+      readBy: [],
+      createdAt: message.createdAt,
+    },
+  }
+  await emitToUsers(memberIds, 'chat:new-message', payload)
+
+  // Reuse the existing notification engine (one private Notification per
+  // recipient, honouring per-user settings). The bell links into /chat.
+  // Recipients are addressed by EMAIL (the Notification schema's key), so the
+  // member ids are resolved in a single query; the sender is skipped.
+  const recipientEmails = memberIds
+    .filter((id) => String(id) !== String(me._id))
+    .map((id) => String(id))
+  if (recipientEmails.length) {
+    const recipients = await User.find({ _id: { $in: recipientEmails } })
+      .select('email')
+      .lean()
+    await notifyUsersByEmail(
+      recipients.map((r) => r.email),
+      {
+        type: 'chat',
+        title: me.name || 'New message',
+        body: preview.length > 140 ? `${preview.slice(0, 140)}…` : preview,
+        sender: me.name || 'System',
+        link: '/chat',
+        priority: 'normal',
+      }
+    ).catch(() => {})
+  }
+
+  return payload.message
+}
+
+// ---------------------------------------------------------------------------
+// Attachments
+// ---------------------------------------------------------------------------
+function fileKindFromMime(mime) {
+  if (mime.startsWith('image/')) return 'image'
+  if (mime.startsWith('video/')) return 'video'
+  if (mime === 'application/pdf') return 'pdf'
+  if (mime.includes('wordprocessingml') || mime === 'application/msword') return 'word'
+  if (mime.includes('spreadsheetml') || mime === 'application/vnd.ms-excel') return 'excel'
+  return 'other'
+}
+
+// Persist an uploaded chat file: metadata as a PRIVATE chat FileItem (marked
+// `source: 'chat'` so the general Files module excludes it — it is never a
+// normal company file), bytes on disk under chat-uploads/ (outside the
+// publicly served /uploads dir). The metadata is returned to the caller, who
+// then sends it with the message.
+export async function uploadChatAttachment(userId, conversationId, file) {
+  const conversation = await loadConversation(conversationId)
+  assertParticipant(conversation, userId)
+  if (!file) throw new ApiError(400, 'No file uploaded')
+
+  const me = await resolveInternalUser(userId)
+  const kind = fileKindFromMime(file.mimetype || '')
+  const item = await FileItem.create({
+    name: file.originalname,
+    originalName: file.originalname,
+    mimeType: file.mimetype || 'application/octet-stream',
+    type: kind,
+    size: file.size,
+    url: `/chat-uploads/${file.filename}`,
+    owner: me.name,
+    permission: 'private',
+    // PHASE: EMPLOYEE CHAT ATTACHMENT PRIVACY — chat files are conversation
+    // attachments, not company files. The Files module filters on this field,
+    // so this record can never surface in My Files / Company Files / Shared
+    // Files / search / storage counts.
+    source: 'chat',
+  })
+
+  return {
+    fileId: String(item._id),
+    name: file.originalname,
+    url: `/chat/conversations/${conversation._id}/attachments/${item._id}`,
+    size: file.size,
+    mimeType: file.mimetype || 'application/octet-stream',
+    kind,
+  }
+}
+
+// Resolve an attachment for download. The caller must be a participant of the
+// conversation the file was sent in AND the file must actually belong to that
+// conversation (a message in it references the fileId), so a participant of
+// one conversation can never fetch another conversation's attachment by id.
+// Returns the on-disk path so the route can stream it without ever exposing
+// the filesystem to the client.
+export async function getChatAttachment(userId, conversationId, fileId) {
+  assertObjectId(fileId, 'file id')
+  const conversation = await loadConversation(conversationId)
+  assertParticipant(conversation, userId)
+
+  // Ownership binding: the attachment is downloadable only when a message of
+  // THIS conversation carries this fileId. An uploaded-but-never-sent file (or
+  // a file id guessed from another conversation) resolves to 404.
+  const message = await Message.findOne({
+    conversation: conversation._id,
+    'attachment.fileId': fileId,
+  })
+    .select('_id')
+    .lean()
+  if (!message) throw new ApiError(404, 'Attachment not found')
+
+  const item = await FileItem.findById(fileId).lean()
+  if (!item || item.source === 'files') throw new ApiError(404, 'Attachment not found')
+
+  const diskName = String(item.url || '').replace(/^\/chat-uploads\//, '')
+  if (!diskName || /[/\\]/.test(diskName)) throw new ApiError(400, 'Invalid file path')
+  return { absPath: `chat-uploads/${diskName}`, name: item.originalName || item.name }
+}
+
+export async function markConversationRead(userId, conversationId) {
+  const conversation = await loadConversation(conversationId)
+  assertParticipant(conversation, userId)
+
+  const result = await Message.updateMany(
+    {
+      conversation: conversation._id,
+      sender: { $ne: userId },
+      readBy: { $ne: userId },
+    },
+    { $push: { readBy: { user: userId, at: new Date() } } }
+  )
+
+  const memberIds = (conversation.participants || []).map((p) => p.user)
+  await emitToUsers(memberIds, 'chat:read', {
+    conversationId: String(conversation._id),
+    userId: String(userId),
+  })
+
+  return { updated: result.modifiedCount || 0 }
+}
+
+// ---------------------------------------------------------------------------
+// Group membership management
+// ---------------------------------------------------------------------------
+export async function addGroupMember(userId, conversationId, newUserId) {
+  assertObjectId(newUserId, 'user id')
+  const me = await resolveInternalUser(userId)
+  const conversation = await loadConversation(conversationId)
+  assertParticipant(conversation, userId)
+  if (!canManageGroup(conversation, me)) {
+    throw new ApiError(403, 'Only the group creator (or an Admin) can add members')
+  }
+  const target = await resolveInternalUser(newUserId)
+  if ((conversation.participants || []).some((p) => String(p.user) === String(target._id))) {
+    throw new ApiError(400, 'User is already a member of this group')
+  }
+
+  await Conversation.updateOne(
+    { _id: conversation._id },
+    { $push: { participants: { user: target._id, role: target.role, addedBy: me._id } } }
+  )
+  const memberIds = (conversation.participants || []).map((p) => p.user)
+  await emitToUsers([...memberIds, target._id], 'chat:conversation-updated', {
+    conversationId: String(conversation._id),
+  })
+  return getConversation(userId, conversation._id)
+}
+
+export async function removeGroupMember(userId, conversationId, targetUserId) {
+  assertObjectId(targetUserId, 'user id')
+  const me = await resolveInternalUser(userId)
+  const conversation = await loadConversation(conversationId)
+  assertParticipant(conversation, userId)
+  if (!canManageGroup(conversation, me)) {
+    throw new ApiError(403, 'Only the group creator (or an Admin) can remove members')
+  }
+  if (String(targetUserId) === String(userId)) {
+    throw new ApiError(400, 'Use /leave to remove yourself from a group')
+  }
+  if (String(targetUserId) === String(conversation.createdBy)) {
+    throw new ApiError(400, 'The group creator cannot be removed')
+  }
+  if (!(conversation.participants || []).some((p) => String(p.user) === String(targetUserId))) {
+    throw new ApiError(404, 'User is not a member of this group')
+  }
+
+  await Conversation.updateOne(
+    { _id: conversation._id },
+    { $pull: { participants: { user: targetUserId } } }
+  )
+  const memberIds = (conversation.participants || []).map((p) => p.user)
+  await emitToUsers(memberIds, 'chat:conversation-updated', {
+    conversationId: String(conversation._id),
+  })
+  return getConversation(userId, conversation._id)
+}
+
+export async function leaveGroup(userId, conversationId) {
+  const me = await resolveInternalUser(userId)
+  const conversation = await loadConversation(conversationId)
+  assertParticipant(conversation, userId)
+  if (conversation.type !== 'group') {
+    throw new ApiError(400, 'You can only leave group conversations')
+  }
+
+  await Conversation.updateOne(
+    { _id: conversation._id },
+    { $pull: { participants: { user: me._id } } }
+  )
+
+  const remaining = await Conversation.findById(conversation._id).lean()
+  if (!remaining || (remaining.participants || []).length === 0) {
+    // Last member out — the empty conversation is removed (messages remain in
+    // the Message collection but are unreachable without a conversation).
+    await Conversation.deleteOne({ _id: conversation._id })
+  } else {
+    const memberIds = (remaining.participants || []).map((p) => p.user)
+    await emitToUsers(memberIds, 'chat:conversation-updated', {
+      conversationId: String(conversation._id),
+    })
+  }
+  return { left: true }
+}

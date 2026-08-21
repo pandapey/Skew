@@ -17,7 +17,7 @@ import { User } from '../models/User.js'
 import { Employee } from '../models/Employee.js'
 import { AuditLog } from '../models/adminModels.js'
 
-const API = 'http://localhost:5000/api'
+const API = 'https://skew-server-317n.onrender.com/api'
 const EMP_EMAIL = 'e2e-salary-audit@skew.com'
 const EMP_PASSWORD = 'E2eSalaryAudit#1'
 const EMP_NAME = 'E2E Salary Audit Employee'

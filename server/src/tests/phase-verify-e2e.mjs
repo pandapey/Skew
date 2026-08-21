@@ -18,7 +18,7 @@ import { Client, ClientProject } from '../models/clientModels.js'
 import { Invoice, Transaction } from '../models/financeModels.js'
 import { AuditLog } from '../models/adminModels.js'
 
-const API = 'http://localhost:5000/api'
+const API = 'https://skew-server-317n.onrender.com/api'
 const COMPANY = 'E2E Billing Verify Co'
 const ADMIN_EMAIL = 'e2e-cb-admin@skew.com'
 const CLIENT_EMAIL = 'e2e-cb-client@skew.com'

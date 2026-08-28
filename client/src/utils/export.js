@@ -88,7 +88,7 @@ export function exportToPdf(filename, rows, columns, { title = 'Report', subtitl
 }
 
 const fmt = (n) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(n || 0)
-const day = (d) => (d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—')
+const day=(d)=>(d?new Date(d).toLocaleDateString('en-IN',{timeZone:'Asia/Kolkata',day:'2-digit',month:'short',year:'numeric'}):'—')
 
 // Branded, printable invoice document (download). Mirrors the on-screen invoice view.
 export function exportInvoicePdf(invoice) {

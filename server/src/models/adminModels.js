@@ -25,7 +25,7 @@ const apiKeySchema = new Schema({
   env: { type: String, enum: ['Production', 'Staging', 'Development'], default: 'Production' },
   status: { type: String, enum: ['Active', 'Revoked'], default: 'Active' },
   lastUsed: { type: String, default: '—' },
-  createdAt: { type: String, default: () => new Date().toISOString().slice(0, 10) },
+  createdAt: { type: String, default: () => new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'}) },
   createdBy: { type: String, default: 'System' },
 }, opts)
 
@@ -58,7 +58,7 @@ const backupSchema = new Schema({
   name: { type: String, required: true },
   type: { type: String, enum: ['Full', 'Incremental', 'Differential'], default: 'Full' },
   size: { type: Number, default: 0 },
-  createdAt: { type: String, default: () => new Date().toISOString().slice(0, 16).replace('T', ' ') },
+  createdAt: { type: String, default: () => new Date().toLocaleString('en-CA',{timeZone:'Asia/Kolkata',hour12:false}).replace(',','') },
   status: { type: String, enum: ['Completed', 'In Progress', 'Failed'], default: 'Completed' },
   createdBy: { type: String, default: 'System' },
   durationSec: { type: Number, default: 0 },

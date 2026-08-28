@@ -45,7 +45,7 @@ export async function recordAdvancePayment(client, amount, actorName) {
     type: 'Income',
     category: 'Project Advance',
     amount: advance,
-    date: new Date().toISOString().slice(0, 10),
+    date: new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'}),
     method: client.paymentMode || 'Bank Transfer',
     party: client.company,
     reference,

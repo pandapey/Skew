@@ -51,7 +51,7 @@ import { Attendance, Holiday } from '../models/attendanceModels.js'
 import { LeaveRequest } from '../models/leaveModels.js'
 import { loadShiftContext, resolveShiftConfig } from './leaveExpiry.js'
 import { isSunday, toDateKey } from './leaveDays.js'
-
+import { todayIST, nowMinsIST } from './ist.js' 
 export const ATT_STATUS_PRESENT = 'Present'
 export const ATT_STATUS_LATE = 'Late'
 export const ATT_STATUS_EARLY_EXIT = 'Early Exit'
@@ -103,7 +103,7 @@ const resolveStatus = (subject, ctx) => {
 // `subjects`: [{ name, empCode, shift, inactive }]. `name` may be empty for
 // empCode-only subjects; `empCode` may be empty for User-derived subjects.
 export async function computeTodayStatusMap({ date, now = new Date(), subjects = [] } = {}) {
-  const dateKey = date || new Date().toISOString().slice(0, 10)
+  const dateKey = date || todayIST() // was new Date().toISOString().slice(0,10)
 
   const [records, leaves, holidays, shiftCtx] = await Promise.all([
     Attendance.find({ date: dateKey }).select('employee empCode status -_id').lean(),
@@ -127,7 +127,7 @@ export async function computeTodayStatusMap({ date, now = new Date(), subjects =
     isWorkingDay: !isSunday(dateKey) &&
       !new Set(holidays.map((h) => toDateKey(h.date)).filter(Boolean)).has(dateKey),
     shiftCtx,
-    nowMins: now.getHours() * 60 + now.getMinutes(),
+    nowMins: nowMinsIST(), // was now.getHours()*60+now.getMinutes()
   }
 
   const byName = new Map()

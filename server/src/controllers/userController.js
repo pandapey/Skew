@@ -348,7 +348,9 @@ export const createUser = asyncHandler(async (req, res) => {
         email: email || '',
         // Phase 6.9 (TASK 11): status is no longer caller-supplied.
         status: 'Active',
-        joinedDate: date: new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'}).toISOString().slice(0, 10),
+        joinedDate: new Date().toLocaleDateString('en-CA', {
+  timeZone: 'Asia/Kolkata'
+}),
         // Phase 5.9 (Task 1 & 3): persist the rest of the client profile that
         // the unified form now collects. Guarded with `|| default` so a caller
         // that omits them (the pre-5.9 payload shape) is unaffected.

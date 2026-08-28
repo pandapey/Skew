@@ -26,7 +26,7 @@ import { countWorkingDays, toDateKey, parseDate } from '../utils/leaveDays.js'
 // dayOvertime, overtimeBreakdown) were REMOVED together with the feature.
 import { notifyUsersByName } from './notificationService.js'
 import { emitResource } from '../realtime/index.js'
-
+import { todayIST, nowHMSIST } from '../utils/ist.js'
 // Phase 5.7 (Task 5): Admin is an oversight role, not a tracked headcount, so
 // it must never be required to mark attendance. Enforced on the SERVER as well
 // as hidden in the UI — hiding the button alone would still leave the endpoint
@@ -48,8 +48,9 @@ function openBreakStart(doc) {
   return open ? open.start : null
 }
 
-const today = () => new Date().toISOString().slice(0, 10)
-const nowHMS = () => new Date().toTimeString().slice(0, 8)
+
+const today = todayIST // was () => new Date().toISOString().slice(0,10)
+const nowHMS = nowHMSIST // was () => new Date().toTimeString().slice(0,8)
 const nowEpoch = () => Math.floor(Date.now() / 1000)
 
 // Parse "HH:mm" to minutes-since-midnight.
@@ -166,7 +167,8 @@ function shiftEndInstant(inTime, shift) {
 async function finalizeSession(user, doc, checkOutAt, { autoClose = false } = {}) {
   const ts = new Date(checkOutAt)
   if (Number.isNaN(ts.getTime())) throw new ApiError(400, 'Invalid check-out time')
-  doc.checkOut = ts.toTimeString().slice(0, 8)
+  // old: doc.checkOut = ts.toTimeString().slice(0,8)
+doc.checkOut = ts.toLocaleTimeString('en-GB', { timeZone: 'Asia/Kolkata', hour12: false })
   doc.checkOutAt = ts
   doc.checkOutSeconds = Math.floor(ts.getTime() / 1000)
   // Close any still-open break, then total all break time precisely.

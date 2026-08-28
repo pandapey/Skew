@@ -130,7 +130,7 @@ export const announcementController = {
     doc.comments.push({
       author: req.user?.name || 'Anonymous',
       body: body.trim(),
-      date: new Date().toISOString().slice(0, 10),
+      date: new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'}),
     })
     await doc.save()
     res.status(201).json(withViewerState(doc, req))

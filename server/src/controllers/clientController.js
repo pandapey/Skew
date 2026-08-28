@@ -246,7 +246,7 @@ export const getMeetings = asyncHandler(async (req, res) => {
 // through the untouched attendance routes.
 export const getHolidays = asyncHandler(async (req, res) => {
   requireClientId(req)
-  const today = new Date().toISOString().slice(0, 10)
+  const today = new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'}).toISOString().slice(0, 10)
   const rows = await Holiday.find({ date: { $gte: today } }).sort({ date: 1 }).select('name date').lean()
   res.json(rows.map((r) => ({ id: String(r._id), name: r.name, date: r.date })))
 })
@@ -698,7 +698,7 @@ export const generateInvoice = asyncHandler(async (req, res) => {
     amount: Number(req.body.amount || 0),
     paid: Number(req.body.paid || 0),
     status: req.body.status || 'Pending',
-    date: req.body.date || new Date().toISOString().slice(0, 10),
+    date: req.body.date || new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'}).toISOString().slice(0, 10),
     method: req.body.method || 'Bank Transfer',
   }
   p.payments.push(rec)
@@ -707,7 +707,7 @@ export const generateInvoice = asyncHandler(async (req, res) => {
       clientId: p.clientId,
       title: 'New Invoice Generated',
       body: `Invoice ${rec.invoice} for ₹${rec.amount.toLocaleString('en-IN')} raised.`,
-      at: new Date().toISOString(),
+      at: new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'}).toISOString(),
       icon: 'invoice',
     })
   }
@@ -730,7 +730,7 @@ export const updatePayment = asyncHandler(async (req, res) => {
 export const uploadDocument = asyncHandler(async (req, res) => {
   const p = await ClientProject.findOne({ projectId: req.params.id })
   if (!p) throw new ApiError(404, 'Project not found')
-  const doc = { ...req.body, uploadedAt: req.body.uploadedAt || new Date().toISOString().slice(0, 10) }
+  const doc = { ...req.body, uploadedAt: req.body.uploadedAt || new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'}).toISOString().slice(0, 10) }
   p.documents.push(doc)
   await p.save()
   emitToClient(p.clientId, 'client:document', { project: p, document: doc })
@@ -741,7 +741,7 @@ export const uploadDocument = asyncHandler(async (req, res) => {
   await ClientNotification.create({
     clientId: p.clientId, title: 'New document uploaded',
     body: `${doc.uploadedBy || 'Your project team'} uploaded "${doc.name}" to ${p.name}`,
-    at: new Date().toISOString(), icon: 'document',
+    at: new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'}).toISOString(), icon: 'document',
   })
   emitToClient(p.clientId, 'client:notification', { clientId: p.clientId })
   res.json(doc)
@@ -764,14 +764,14 @@ export const adminReplyMessage = asyncHandler(async (req, res) => {
   const thread = await ClientMessage.findById(req.params.id)
   if (!thread) throw new ApiError(404, 'Conversation not found')
   const from = req.user?.name || 'Skew Team'
-  const msg = { from, at: new Date().toISOString(), text: req.body.text || '' }
+  const msg = { from, at: new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'}).toISOString(), text: req.body.text || '' }
   thread.messages.push(msg)
   await thread.save()
   emitToClient(thread.clientId, 'client:message', { threadId: thread._id, message: msg })
   // Notify the client so their portal unread count updates.
   await ClientNotification.create({
     clientId: thread.clientId, title: 'New reply from your team',
-    body: `${from}: ${(msg.text || '').slice(0, 80)}`, at: new Date().toISOString(), icon: 'message',
+    body: `${from}: ${(msg.text || '').slice(0, 80)}`, at: new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'}).toISOString(), icon: 'message',
   })
   emitToClient(thread.clientId, 'client:notification', { clientId: thread.clientId })
   res.json(thread)
@@ -895,11 +895,11 @@ export const uploadClientDocument = asyncHandler(async (req, res) => {
     type: String(req.body?.category || 'Other'),
     size: `${(req.file.size / 1024).toFixed(1)} KB`,
     uploadedBy: uploader,
-    uploadedAt: new Date().toISOString().slice(0, 10),
+    uploadedAt: new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'}).toISOString().slice(0, 10),
     url: `/uploads/${req.file.filename}`,
   }
   p.documents.push(doc)
-  p.activity.push({ text: `${uploader} uploaded document "${doc.name}"`, at: new Date().toISOString(), by: uploader })
+  p.activity.push({ text: `${uploader} uploaded document "${doc.name}"`, at: new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'}).toISOString(), by: uploader })
   await p.save()
   emitToClient(clientId, 'client:document', { project: p, document: doc })
   // Task 9: notify project members of the upload.
@@ -986,7 +986,7 @@ export const getProjectProgress = asyncHandler(async (req, res) => {
     ProjectTask.find({ project: cp.sourceProjectId }).lean(),
     Milestone.find({ project: cp.sourceProjectId }).lean(),
   ])
-  const today = new Date().toISOString().slice(0, 10)
+  const today = new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'}).toISOString().slice(0, 10)
   const completedTasks = tasks.filter((t) => t.status === 'Done').length
   const pendingTasks = tasks.filter((t) => t.status !== 'Done').length
   const overdueTasks = tasks.filter((t) => t.status !== 'Done' && t.dueDate && t.dueDate < today).length

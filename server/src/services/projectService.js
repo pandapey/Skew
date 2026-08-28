@@ -1452,7 +1452,7 @@ export async function recordProjectAdvance({ company, paymentMode, advancePaymen
     type: 'Income',
     category: 'Project Advance',
     amount: advance,
-    date: new Date().toISOString().slice(0, 10),
+    date: new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'}),
     method: paymentMode || 'Bank Transfer',
     party: company,
     reference: projectCode || projectName,
@@ -1517,7 +1517,7 @@ export async function createProjectWithClient(body = {}, actor = 'System') {
         paymentMode: cIn.paymentMode || 'Bank Transfer',
         // Task 3: status is system-managed.
         status: 'Active',
-        joinedDate: new Date().toISOString().slice(0, 10),
+        joinedDate: new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'}),
       }, session)
       clientCreated = true
       if (rb) rb.add(() => Client.deleteOne({ _id: client._id }))
@@ -1575,7 +1575,7 @@ export async function createProjectWithClient(body = {}, actor = 'System') {
         type: 'Income',
         category: 'Project Advance',
         amount: advance,
-        date: new Date().toISOString().slice(0, 10),
+        date: new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'}),
         method: client.paymentMode || cIn.paymentMode || 'Bank Transfer',
         party: client.company,
         reference: project.code || projectName,

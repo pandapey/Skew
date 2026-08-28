@@ -34,7 +34,8 @@ export function useWorkspace() {
     if (!state.activeTimer) return
     const { taskId, startedAt } = state.activeTimer
     const seconds = Math.max(0, Math.round((Date.now() - startedAt) / 1000))
-    const dateISO = new Date().toISOString().slice(0, 10)
+    const dateISO = new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'})
+    const todayISO = new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'})
     dispatch(stopTimer({ taskId, dateISO, seconds }))
   }, [dispatch, state.activeTimer])
 

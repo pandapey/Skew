@@ -3,8 +3,8 @@ import dayjs from 'dayjs'
 import { calendarApi } from '@/api/services'
 
 export function useTodayEvents() {
-  const from = dayjs().startOf('day').toISOString()
-  const to = dayjs().endOf('day').toISOString()
+  const from = dayjs().tz('Asia/Kolkata').startOf('day').toISOString()
+  const to = dayjs().tz('Asia/Kolkata').endOf('day').toISOString()
   return useQuery({
     queryKey: ['calendar', 'range', 'today'],
     queryFn: () => calendarApi.range(from, to),

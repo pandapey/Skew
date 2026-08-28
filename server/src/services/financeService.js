@@ -51,7 +51,7 @@ export const financeService = {
     await Payment.create({
       paymentNumber: await nextNumber(Payment, 'PMT', 5001),
       direction: 'Incoming', party: inv.client, invoiceNumber: inv.invoiceNumber,
-      amount: amt, method: 'Bank Transfer', status: 'Completed', date: new Date().toISOString().slice(0, 10),
+      amount: amt, method: 'Bank Transfer', status: 'Completed', date: new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'}),
     })
     return withId(inv.toObject())
   },

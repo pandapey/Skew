@@ -236,7 +236,7 @@ export const CLIENT_TIMELINE_STAGES = [
   'Project Created', 'Planning', 'Development', 'Testing', 'Review', 'Deployment', 'Completed',
 ]
 
-const iso = (d) => (d ? new Date(d).toISOString().slice(0, 10) : '')
+const iso=(d)=>d?new Date(d).toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'}):'' + new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'})
 
 // Derive the client-facing roadmap from REAL Project + ProjectTask state.
 // `existing` is the currently-stored timeline: any date or note an Admin has

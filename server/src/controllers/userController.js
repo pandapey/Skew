@@ -531,7 +531,7 @@ export const updateUser = asyncHandler(async (req, res) => {
         email: existing.email || '',
         // Phase 6.9 (TASK 11): mirrors the create path - always Active.
         status: 'Active',
-        joinedDate: date: new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'}).toISOString().slice(0, 10),
+        joinedDate: new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'}).toISOString().slice(0, 10),
         // Phase 5.9 (Task 1 & 3): mirror the create path so a Client profile
         // provisioned during an UPDATE captures the same profile fields.
         phone: patch.phone || existing.phone || '',

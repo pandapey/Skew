@@ -796,7 +796,7 @@ export const leaveService = {
       .slice(-6)
       .map(([, v]) => v)
 
-    const today = new Date().toISOString().slice(0, 10)
+    const today = new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'})
     const upcoming = await Holiday.find({ date: { $gte: today } }).sort({ date: 1 }).limit(4).lean()
 
     // Phase 5.7 (Task 6): "decided TODAY" counters for the Admin dashboard.
@@ -807,7 +807,7 @@ export const leaveService = {
     // Requests decided before the `decision` subdocument existed simply have
     // decision === null and are excluded rather than guessed at.
     const decidedOn = (row) => (row?.decision?.at
-      ? new Date(row.decision.at).toISOString().slice(0, 10)
+      ? new Date(row.decision.at).toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'})
       : null)
     const todayApproved = all.filter((r) => r.status === 'Approved' && decidedOn(r) === today).length
     const todayRejected = all.filter((r) => r.status === 'Rejected' && decidedOn(r) === today).length

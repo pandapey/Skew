@@ -16,7 +16,7 @@ const commentSchema = new mongoose.Schema(
   {
     author: { type: String, default: 'Anonymous' },
     body: { type: String, required: true },
-    date: { type: String, default: () => new Date().toISOString().slice(0, 10) },
+    date: { type: String, default: () => new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'}) },
   },
   { _id: true }
 )
@@ -34,7 +34,7 @@ const postSchema = new mongoose.Schema(
     excerpt: { type: String, default: '' },
     author: { type: String, default: 'System' },
     authorRole: { type: String, default: '' },
-    date: { type: String, default: () => new Date().toISOString().slice(0, 10) },
+    date: { type: String, default: () => new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'}) },
     pinned: { type: Boolean, default: false, index: true },
     likes: { type: Number, default: 0 },
     // PHASE ADMIN (TASK 2) ROOT CAUSE #2 - per-user likes.

@@ -110,6 +110,24 @@ export async function deleteAvatar(req, res) {
   res.json({ avatar: '', user: safe })
 }
 
+export async function getAvatar(req, res) {
+  const fileId = req.params.fileId
+  if (!fileId) return res.status(400).json({ message: 'File ID required' })
+  // Drive fileId (no slash) -> proxy via Drive
+  if (!String(fileId).startsWith('/')) {
+    try {
+      const { driveDownload } = await import('../utils/driveUpload.js')
+      return driveDownload(fileId, res)
+    } catch (e) {
+      return res.status(404).json({ message: 'Avatar not found' })
+    }
+  }
+  // fallback old local path
+  const p = path.join(process.cwd(), String(fileId).replace(/^\//, ''))
+  if (!fs.existsSync(p)) return res.status(404).json({ message: 'Avatar not found' })
+  res.sendFile(p)
+}
+
 export async function refresh(req, res) {
   const { refreshToken } = req.body
   if (!refreshToken) return res.status(400).json({ message: 'Refresh token required' })

@@ -1,22 +1,19 @@
 import { cn, initials, colorFromString } from '@/utils'
 
-// Resolve a DB-relative "/uploads/..." avatar path to an absolute backend URL.
-// Static uploads are served from the API origin (not under /api), while the
-// frontend runs on a different origin, so a raw "/uploads/x" would 404. Keeping
-// this here lets user.avatar be stored as the relative path everywhere (Navbar,
-// Dashboard, Profile) and still render after a refresh (#2). Absolute/data/blob
-// URLs (e.g. an unsaved local preview) pass through untouched.
 function resolveSrc(src) {
   if (!src || typeof src !== 'string') return src
   if (/^(https?:|data:|blob:)/i.test(src)) return src
-  if (src.startsWith('/uploads')) {
+  if (src.startsWith('/uploads') || src.startsWith('/chat-uploads') || src.startsWith('/profile-uploads')) {
     const base = (import.meta.env.VITE_API_BASE_URL || 'https://skew-server-317n.onrender.com/api').replace(/\/api$/, '')
     return `${base}${src}`
+  }
+  // Drive fileId (no slash, long alphanumeric) -> direct Drive view link
+  if (/^[a-zA-Z0-9_-]{20,}$/.test(src) && !src.includes('.')) {
+    return `https://drive.google.com/uc?export=view&id=${src}`
   }
   return src
 }
 
-// Avatar with image fallback to colored initials + glass ring.
 export function Avatar({ name = '', src, size = 40, className, ring = true }) {
   const dimension = { width: size, height: size }
   const ringCls = ring ? 'ring-2 ring-white/40 dark:ring-white/10' : ''

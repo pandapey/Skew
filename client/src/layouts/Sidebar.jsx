@@ -1,8 +1,8 @@
-import { NavLink, useLocation } from 'react-router-dom'
+import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { useSelector, useDispatch } from 'react-redux'
 import { useQuery } from '@tanstack/react-query'
-import { FiChevronLeft, FiChevronRight } from 'react-icons/fi'
+import { FiChevronLeft, FiChevronRight, FiLogOut } from 'react-icons/fi'
 import { NAV_ITEMS } from '@/constants/navigation'
 import { BrandLogo } from '@/components/branding/BrandLogo'
 import { useAuth } from '@/hooks/useAuth'
@@ -27,9 +27,6 @@ function useSidebarBadges(hasRole, user) {
     enabled: Boolean(user),
     select: (res) => res?.count ?? 0,
   })
-  // PHASE: EMPLOYEE ANNOUNCEMENT READ STATE — server-computed count of posts
-  // this user hasn't opened yet. Enabled for every internal role (the feed is
-  // part of the employee workspace); Client has no /announcements route.
   const announcements = useQuery({
     queryKey: ['announcements', 'unread-count'],
     queryFn: announcementApi.unreadCount,
@@ -46,9 +43,15 @@ function useSidebarBadges(hasRole, user) {
 
 export function Sidebar({ items: propItems }) {
   const dispatch = useDispatch()
-  const { hasRole, user } = useAuth()
+  const navigate = useNavigate()
+  const { hasRole, user, logout } = useAuth()
   const { sidebarOpen, sidebarCollapsed } = useSelector((s) => s.ui)
   const badges = useSidebarBadges(hasRole, user)
+
+  const handleLogout = () => {
+    logout()
+    navigate('/login')
+  }
 
   const items = propItems || NAV_ITEMS.filter((item) => hasRole(item.roles))
 
@@ -65,7 +68,6 @@ export function Sidebar({ items: propItems }) {
 
   return (
     <>
-      {/* Mobile backdrop */}
       {sidebarOpen && (
         <div
           className="fixed inset-0 z-30 bg-black/40 backdrop-blur-sm lg:hidden"
@@ -89,7 +91,6 @@ export function Sidebar({ items: propItems }) {
           )}
         </div>
 
-        {/* Nav */}
         <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-2">
           {items.map((item) => {
             const active = bestMatch > -1 && itemMatchLength(item) === bestMatch
@@ -142,7 +143,23 @@ export function Sidebar({ items: propItems }) {
           })}
         </nav>
 
-        {/* Collapse toggle (desktop) */}
+        {/* Logout — always last in left nav for all roles */}
+        <div className="border-t border-app p-3">
+          <button
+            onClick={handleLogout}
+            title={sidebarCollapsed ? 'Logout' : undefined}
+            className={cn(
+              'flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition shadow-sm',
+              'bg-danger text-white hover:bg-danger/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger/30',
+              sidebarCollapsed && 'justify-center'
+            )}
+            aria-label="Logout"
+          >
+            <FiLogOut className="h-5 w-5 flex-none" />
+            {!sidebarCollapsed && <span>Logout</span>}
+          </button>
+        </div>
+
         <button
           onClick={() => dispatch(toggleCollapse())}
           className="hidden items-center justify-center gap-2 border-t border-app py-3 text-sm text-muted transition hover:text-primary lg:flex"

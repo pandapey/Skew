@@ -39,7 +39,8 @@ export function fileUrl(url) {
     return `${base}${url}`
   }
   if (/^[a-zA-Z0-9_-]{20,}$/.test(url) && !url.includes('.')) {
-    return `https://drive.google.com/uc?export=view&id=${url}`
+    const base = (import.meta.env.VITE_API_BASE_URL || 'https://skew-server-317n.onrender.com/api').replace(/\/api$/, '')
+    return `${base}/api/auth/avatar/${url}`
   }
   const base = (import.meta.env.VITE_API_BASE_URL || 'https://skew-server-317n.onrender.com/api').replace(/\/api$/, '')
   return `${base}${url}`

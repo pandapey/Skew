@@ -15,6 +15,15 @@ export async function uploadToDrive({ buffer, originalname, mimetype }) {
     },
     fields: "id, name, webViewLink",
   });
+  // make file publicly readable so direct Drive links work (avatar, preview)
+  try {
+    await drive.permissions.create({
+      fileId: res.data.id,
+      requestBody: { role: "reader", type: "anyone" },
+    });
+  } catch (e) {
+    // ignore permission errors (drive.file scope may not allow)
+  }
   return { id: res.data.id, name: fileName, webViewLink: res.data.webViewLink };
 }
 

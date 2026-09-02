@@ -97,6 +97,18 @@ export function Navbar() {
               Logout
             </DropdownItem>
           </Dropdown>
+
+          {/* Direct Logout button — always visible as last item on right for all roles */}
+          <div className="ml-1 hidden h-6 w-px bg-black/10 dark:bg-white/10 sm:block" aria-hidden />
+          <button
+            onClick={handleLogout}
+            className="flex items-center gap-1.5 rounded-xl bg-danger px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-danger/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger/30"
+            aria-label="Logout"
+            title="Logout"
+          >
+            <FiLogOut className="h-4 w-4" />
+            <span>Logout</span>
+          </button>
         </div>
       </div>
     </header>

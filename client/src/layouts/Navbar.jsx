@@ -1,179 +1,104 @@
-import { NavLink, useLocation, useNavigate } from 'react-router-dom'
-import { motion } from 'framer-motion'
-import { useSelector, useDispatch } from 'react-redux'
-import { useQuery } from '@tanstack/react-query'
-import { FiChevronLeft, FiChevronRight, FiLogOut } from 'react-icons/fi'
-import { NAV_ITEMS } from '@/constants/navigation'
-import { BrandLogo } from '@/components/branding/BrandLogo'
-import { useAuth } from '@/hooks/useAuth'
-import { projectApi, announcementApi } from '@/api/services'
-import { chatApi } from '@/api/chatService'
-import { useNotifications } from '@/features/notifications/NotificationContext'
+import { useRef } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { useDispatch, useSelector } from 'react-redux'
+import { FiMenu, FiMoon, FiSun, FiSearch, FiLogOut, FiUser, FiSettings } from 'react-icons/fi'
+import { toggleSidebar, toggleTheme } from '@/redux/slices/uiSlice'
 import { ROLES } from '@/constants'
-import { toggleCollapse, setSidebarOpen } from '@/redux/slices/uiSlice'
-import { cn } from '@/utils'
+import { useAuth } from '@/hooks/useAuth'
+import { Avatar, Dropdown, DropdownItem } from '@/components/ui'
+import { BrandLogo } from '@/components/branding/BrandLogo'
+import { NotificationBell } from '@/features/notifications/NotificationBell'
+import { ClientNotificationBell } from '@/features/client/ClientNotificationBell'
 
-function useSidebarBadges(hasRole, user) {
-  const { unreadCount: notifUnread } = useNotifications()
-  const myTasks = useQuery({
-    queryKey: ['tasks', 'mine-count'],
-    queryFn: projectApi.myTasksCount,
-    enabled: Boolean(user) && hasRole(ROLES.EMPLOYEE),
-    select: (res) => res?.count ?? 0,
-  })
-  const chat = useQuery({
-    queryKey: ['chat-unread-count'],
-    queryFn: chatApi.unreadCount,
-    enabled: Boolean(user),
-    select: (res) => res?.count ?? 0,
-  })
-  const announcements = useQuery({
-    queryKey: ['announcements', 'unread-count'],
-    queryFn: announcementApi.unreadCount,
-    enabled: Boolean(user),
-    select: (res) => res?.count ?? 0,
-  })
-  return {
-    'my-tasks': myTasks.data || 0,
-    chat: chat.data || 0,
-    announcements: announcements.data || 0,
-    notifications: notifUnread || 0,
-  }
-}
-
-export function Sidebar({ items: propItems }) {
+export function Navbar() {
   const dispatch = useDispatch()
   const navigate = useNavigate()
-  const { hasRole, user, logout } = useAuth()
-  const { sidebarOpen, sidebarCollapsed } = useSelector((s) => s.ui)
-  const badges = useSidebarBadges(hasRole, user)
+  const { user, logout } = useAuth()
+  const theme = useSelector((s) => s.ui.theme)
+  const searchRef = useRef(null)
 
   const handleLogout = () => {
     logout()
     navigate('/login')
   }
 
-  const items = propItems || NAV_ITEMS.filter((item) => hasRole(item.roles))
-
-  const { pathname } = useLocation()
-  const matchLength = (path) => {
-    if (!path) return -1
-    if (pathname === path) return path.length
-    return pathname.startsWith(path.endsWith('/') ? path : `${path}/`) ? path.length : -1
-  }
-
-  const itemMatchLength = (item) =>
-    [item.path, ...(item.matchPaths || [])].reduce((best, p) => Math.max(best, matchLength(p)), -1)
-  const bestMatch = items.reduce((best, item) => Math.max(best, itemMatchLength(item)), -1)
+  const goSearch = (q) => navigate('/search?q=' + encodeURIComponent(q))
+  const isClient = user?.role === ROLES.CLIENT
+  const canSeeSettings = user?.role === ROLES.ADMIN
 
   return (
-    <>
-      {sidebarOpen && (
-        <div
-          className="fixed inset-0 z-30 bg-black/40 backdrop-blur-sm lg:hidden"
-          onClick={() => dispatch(setSidebarOpen(false))}
-        />
-      )}
-
-      <motion.aside
-        className={cn(
-          'fixed inset-y-0 left-0 z-40 flex w-72 flex-col border-r border-app glass-strong lg:static lg:m-3 lg:h-[calc(100vh-1.5rem)] lg:w-64 lg:rounded-sidebar lg:border lg:shadow-floating',
-          sidebarCollapsed && 'lg:w-20',
-          sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
-        )}
-        transition={{ type: 'spring', duration: 0.4, bounce: 0.12 }}
-      >
-        <div className={cn('flex h-16 items-center px-4', sidebarCollapsed && 'justify-center px-0')}>
-          {sidebarCollapsed ? (
-            <BrandLogo variant="favicon" className="h-8 w-8 flex-none" alt="Company favicon" />
-          ) : (
-            <BrandLogo className="h-8 w-auto flex-none" alt="Company logo" />
-          )}
-        </div>
-
-        <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-2">
-          {items.map((item) => {
-            const active = bestMatch > -1 && itemMatchLength(item) === bestMatch
-            return (
-            <NavLink
-              key={item.key}
-              to={item.path}
-              onClick={() => dispatch(setSidebarOpen(false))}
-              title={sidebarCollapsed ? item.label : undefined}
-              className={cn(
-                'group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition',
-                sidebarCollapsed && 'justify-center'
-              )}
-            >
-              {() => {
-                const isActive = active
-                return (
-                <>
-                  {isActive && (
-                    <motion.span
-                      layoutId="nav-active"
-                      className="absolute inset-0 rounded-xl bg-gradient-to-r from-primary to-accent shadow-glow-primary"
-                      transition={{ type: 'spring', duration: 0.4, bounce: 0.2 }}
-                    />
-                  )}
-                  <item.icon
-                    className={cn(
-                      'relative z-10 h-5 w-5 flex-none transition-colors',
-                      isActive ? 'text-white' : 'text-muted group-hover:text-current'
-                    )}
-                  />
-                  {!sidebarCollapsed && (
-                    <span className={cn('relative z-10', isActive && 'text-white')}>{item.label}</span>
-                  )}
-                  {!sidebarCollapsed && item.badge && badges[item.badge] > 0 && (
-                    <span
-                      className={cn(
-                        'relative z-10 ml-auto flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[10px] font-bold text-white',
-                        isActive ? 'bg-white/25' : 'bg-danger',
-                      )}
-                    >
-                      {badges[item.badge] > 99 ? '99+' : badges[item.badge]}
-                    </span>
-                  )}
-                </>
-                )
-              }}
-            </NavLink>
-            )
-          })}
-        </nav>
-
-        {/* Logout — always last in left nav for all roles */}
-        <div className="border-t border-app p-3">
-          <button
-            onClick={handleLogout}
-            title={sidebarCollapsed ? 'Logout' : undefined}
-            className={cn(
-              'flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition shadow-sm',
-              'bg-danger text-white hover:bg-danger/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger/30',
-              sidebarCollapsed && 'justify-center'
-            )}
-            aria-label="Logout"
-          >
-            <FiLogOut className="h-5 w-5 flex-none" />
-            {!sidebarCollapsed && <span>Logout</span>}
-          </button>
-        </div>
-
+    <header className="sticky top-0 z-30 mx-3 mt-3">
+      <div className="glass flex h-16 items-center gap-3 rounded-card px-3 shadow-floating-sm sm:px-4">
         <button
-          onClick={() => dispatch(toggleCollapse())}
-          className="hidden items-center justify-center gap-2 border-t border-app py-3 text-sm text-muted transition hover:text-primary lg:flex"
+          className="rounded-xl p-2 text-muted transition hover:bg-black/5 hover:text-current dark:hover:bg-white/10 lg:hidden"
+          onClick={() => dispatch(toggleSidebar())}
+          aria-label="Toggle menu"
         >
-          {sidebarCollapsed ? (
-            <FiChevronRight />
-          ) : (
-            <>
-              <FiChevronLeft className="transition" />
-              <span>Collapse</span>
-            </>
-          )}
+          <FiMenu />
         </button>
-      </motion.aside>
-    </>
+
+        {/* Brand mark — mobile only, where the sidebar (and its logo) is hidden */}
+        <BrandLogo className="h-7 w-auto lg:hidden" alt="Company logo" />
+
+        {/* Global search (staff only) */}
+        {isClient ? (
+          <div className="flex-1" />
+        ) : (
+          <div className="relative hidden max-w-md flex-1 md:block">
+            <FiSearch className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
+            <input
+              ref={searchRef}
+              className="input pl-9 pr-4"
+              placeholder="Search employees, projects, clients…"
+              onKeyDown={(e) => e.key === 'Enter' && goSearch(e.target.value)}
+              aria-label="Global search"
+            />
+          </div>
+        )}
+
+        <div className="ml-auto flex items-center gap-1">
+          {/* Theme toggle */}
+          <button
+            onClick={() => dispatch(toggleTheme())}
+            className="rounded-xl p-2 text-muted transition hover:bg-black/5 hover:text-current dark:hover:bg-white/10"
+            aria-label="Toggle theme"
+          >
+            {theme === 'dark' ? <FiSun /> : <FiMoon />}
+          </button>
+
+          {/* Notifications (client-scoped for clients, staff otherwise) */}
+          {isClient ? <ClientNotificationBell /> : <NotificationBell />}
+
+          {/* User menu */}
+          <Dropdown
+            trigger={
+              <div className="flex items-center gap-2 rounded-xl p-1 pr-2 transition hover:bg-black/5 dark:hover:bg-white/10">
+                <Avatar name={user?.name} src={user?.avatar} size={34} />
+                <div className="hidden text-left sm:block">
+                  <p className="text-sm font-semibold leading-tight">{user?.name}</p>
+                  <p className="text-[11px] text-muted">{user?.role}</p>
+                </div>
+              </div>
+            }
+          >
+            <div className="border-b border-app px-3 py-2">
+              <p className="text-sm font-semibold">{user?.name}</p>
+              <p className="text-xs text-muted">{user?.email}</p>
+            </div>
+            <DropdownItem icon={FiUser} onClick={() => navigate(isClient ? '/client/profile' : '/profile')}>
+              My Profile
+            </DropdownItem>
+            {canSeeSettings && (
+              <DropdownItem icon={FiSettings} onClick={() => navigate('/admin')}>
+                Settings
+              </DropdownItem>
+            )}
+            <DropdownItem icon={FiLogOut} danger onClick={handleLogout}>
+              Logout
+            </DropdownItem>
+          </Dropdown>
+        </div>
+      </div>
+    </header>
   )
 }

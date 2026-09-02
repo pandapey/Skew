@@ -1,6 +1,3 @@
-// Thin controller mapping HTTP requests to chatService. All authorization
-// lives in the service (participant checks, group management rules, internal-
-// user resolution) — this file performs no business logic of its own.
 import { asyncHandler } from '../utils/asyncHandler.js'
 import * as svc from '../services/chatService.js'
 
@@ -41,8 +38,13 @@ export const uploadAttachment = asyncHandler(async (req, res) =>
 )
 
 export const downloadAttachment = asyncHandler(async (req, res) => {
-  const { absPath, name } = await svc.getChatAttachment(req.user._id, req.params.id, req.params.fileId)
-  res.download(absPath, name)
+  const result = await svc.getChatAttachment(req.user._id, req.params.id, req.params.fileId)
+  if (result.isDrive) {
+    const { driveDownload } = await import('../utils/driveUpload.js')
+    res.setHeader('Content-Disposition', `attachment; filename="${result.name}"`)
+    return driveDownload(result.driveId, res)
+  }
+  res.download(result.absPath, result.name)
 })
 
 export const markRead = asyncHandler(async (req, res) =>
@@ -60,3 +62,4 @@ export const removeMember = asyncHandler(async (req, res) =>
 export const leaveGroup = asyncHandler(async (req, res) =>
   res.json(await svc.leaveGroup(req.user._id, req.params.id))
 )
+

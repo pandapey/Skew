@@ -1,35 +1,13 @@
-// chatService.js — internal staff chat (Admin / HR / Manager / Employee).
-//
-// AUTHORIZATION MODEL (server-side only; the frontend hiding buttons is never
-// the enforcement):
-//   * Every conversation-scoped operation first loads the Conversation and
-//     asserts the caller is a participant (assertParticipant) — a user can
-//     only read/send in conversations they belong to.
-//   * Clients are rejected at the router (blockClient) AND here: participants
-//     are resolved from the live User collection and any Client-role user is
-//     rejected, so a forged payload cannot smuggle a client into a chat.
-//   * Group member management (add/remove) requires the group creator or an
-//     Admin-role user (canManageGroup). The creator cannot be removed and a
-//     member cannot remove themselves through the remove endpoint (use /leave).
-//
-// REALTIME: this is NOT a second realtime system — it reuses the project's
-// single Socket.IO instance (realtime/index.js) via emitToUsers, which targets
-// the per-user rooms (`user:<id>`) that the existing socket auth already joins
-// for every staff member.
-//
-// NOTIFICATIONS: new messages fan out through the EXISTING notification engine
-// (notificationService.notifyUsersByEmail -> one private Notification per
-// recipient, honouring per-user NotificationSettings) with type 'chat' and a
-// link to /chat, so the navbar bell shows chat unread counts with no second
-// notification system.
 import { ApiError } from '../utils/asyncHandler.js'
 import { User } from '../models/User.js'
 import { Conversation, Message } from '../models/chatModels.js'
 import { FileItem } from '../models/fileModels.js'
 import { notifyUsersByEmail } from './notificationService.js'
 import { emitToUsers } from '../realtime/index.js'
+import { uploadToDrive } from '../utils/driveUpload.js'
+import fs from 'fs'
+import path from 'path'
 
-// The internal staff set. Clients are excluded from internal chat by design.
 const CHAT_ROLES = ['Admin', 'Manager', 'Employee']
 const MESSAGE_PREVIEW_LENGTH = 80
 const DEFAULT_MESSAGE_LIMIT = 50
@@ -48,9 +26,6 @@ const compact = (user) => ({
   department: user.department || '',
 })
 
-// ---------------------------------------------------------------------------
-// Internal directory — the picker for starting a new chat.
-// ---------------------------------------------------------------------------
 export async function listChatUsers() {
   const users = await User.find({ role: { $in: CHAT_ROLES }, status: 'Active' })
     .select('name email role avatar empCode designation department')
@@ -59,9 +34,6 @@ export async function listChatUsers() {
   return users.map(compact)
 }
 
-// ---------------------------------------------------------------------------
-// Authorization helpers
-// ---------------------------------------------------------------------------
 function assertObjectId(id, label = 'id') {
   if (!isObjectId(id)) throw new ApiError(400, `Invalid ${label}`)
 }
@@ -102,14 +74,8 @@ async function unreadCount(conversationId, userId) {
   })
 }
 
-// ---------------------------------------------------------------------------
-// View builders
-// ---------------------------------------------------------------------------
 function otherParticipant(conversation, userId, participantsById) {
   const target = (conversation.participants || []).find((p) => String(p.user) !== String(userId))
-  // `target` is a participant SUBDOCUMENT ({ user, role, addedBy, joinedAt }),
-  // not a User document — resolve its display identity from the preloaded
-  // participantsById map so `other` carries the real name/email/avatar.
   return target ? (participantsById.get(String(target.user)) || null) : null
 }
 
@@ -123,7 +89,6 @@ function buildConversationView(conversation, me, participantsById, unread) {
     _id: String(conversation._id),
     type: conversation.type,
     name: isGroup ? conversation.name : (other?.name || 'Unknown user'),
-    // `other` mirrors the display participant for direct chats (avatar/role).
     other,
     isGroup,
     memberCount: members.length,
@@ -143,9 +108,6 @@ function buildConversationView(conversation, me, participantsById, unread) {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Conversations
-// ---------------------------------------------------------------------------
 export async function listConversations(userId) {
   const conversations = await Conversation.find({ 'participants.user': userId })
     .sort({ updatedAt: -1 })
@@ -163,9 +125,6 @@ export async function listConversations(userId) {
     return buildConversationView(c, userId, participantsById, unread)
   }))
 
-  // Direct conversations whose other participant has been removed from the
-  // system still render (identity from the snapshot); the service never lets
-  // a new conversation be created with a non-staff user.
   return views
 }
 
@@ -181,10 +140,6 @@ export async function getConversation(userId, conversationId) {
   return buildConversationView(conversation, userId, participantsById, unread)
 }
 
-// PHASE: EMPLOYEE CHAT (REQUIREMENT 7) — TOTAL unread messages across every
-// conversation the user is a participant of. Reuses the same per-conversation
-// unread rule (sender !== me, not in readBy) so the sidebar badge is the sum
-// of the per-conversation unreadCount values the Chat page already shows.
 export async function totalUnreadCount(userId) {
   const conversations = await Conversation.find({ 'participants.user': userId }).select('_id').lean()
   const count = await Message.countDocuments({
@@ -195,9 +150,6 @@ export async function totalUnreadCount(userId) {
   return { count }
 }
 
-// ---------------------------------------------------------------------------
-// Direct conversations — find-or-create, never duplicated.
-// ---------------------------------------------------------------------------
 export async function getOrCreateDirectConversation(userId, otherUserId) {
   assertObjectId(otherUserId, 'user id')
   const me = await resolveInternalUser(userId)
@@ -225,9 +177,6 @@ export async function getOrCreateDirectConversation(userId, otherUserId) {
   return getConversation(userId, conversation._id)
 }
 
-// ---------------------------------------------------------------------------
-// Groups
-// ---------------------------------------------------------------------------
 export async function createGroup(userId, { name, memberIds = [] }) {
   const me = await resolveInternalUser(userId)
   const cleanName = String(name || '').trim()
@@ -237,7 +186,7 @@ export async function createGroup(userId, { name, memberIds = [] }) {
   const requested = [...new Set((Array.isArray(memberIds) ? memberIds : []).map(String))]
   const members = []
   for (const id of requested) {
-    if (String(id) === String(me._id)) continue // creator is always a member
+    if (String(id) === String(me._id)) continue
     members.push(await resolveInternalUser(id))
   }
 
@@ -255,9 +204,6 @@ export async function createGroup(userId, { name, memberIds = [] }) {
   return getConversation(userId, conversation._id)
 }
 
-// ---------------------------------------------------------------------------
-// Messages
-// ---------------------------------------------------------------------------
 export async function listMessages(userId, conversationId, { before, limit } = {}) {
   const conversation = await loadConversation(conversationId)
   assertParticipant(conversation, userId)
@@ -346,10 +292,6 @@ export async function sendMessage(userId, conversationId, { text, attachment } =
   }
   await emitToUsers(memberIds, 'chat:new-message', payload)
 
-  // Reuse the existing notification engine (one private Notification per
-  // recipient, honouring per-user settings). The bell links into /chat.
-  // Recipients are addressed by EMAIL (the Notification schema's key), so the
-  // member ids are resolved in a single query; the sender is skipped.
   const recipientEmails = memberIds
     .filter((id) => String(id) !== String(me._id))
     .map((id) => String(id))
@@ -373,9 +315,6 @@ export async function sendMessage(userId, conversationId, { text, attachment } =
   return payload.message
 }
 
-// ---------------------------------------------------------------------------
-// Attachments
-// ---------------------------------------------------------------------------
 function fileKindFromMime(mime) {
   if (mime.startsWith('image/')) return 'image'
   if (mime.startsWith('video/')) return 'video'
@@ -385,11 +324,6 @@ function fileKindFromMime(mime) {
   return 'other'
 }
 
-// Persist an uploaded chat file: metadata as a PRIVATE chat FileItem (marked
-// `source: 'chat'` so the general Files module excludes it — it is never a
-// normal company file), bytes on disk under chat-uploads/ (outside the
-// publicly served /uploads dir). The metadata is returned to the caller, who
-// then sends it with the message.
 export async function uploadChatAttachment(userId, conversationId, file) {
   const conversation = await loadConversation(conversationId)
   assertParticipant(conversation, userId)
@@ -397,19 +331,32 @@ export async function uploadChatAttachment(userId, conversationId, file) {
 
   const me = await resolveInternalUser(userId)
   const kind = fileKindFromMime(file.mimetype || '')
+  let driveId = null
+  let url = null
+  if (process.env.GOOGLE_DRIVE_FOLDER_ID && file.buffer) {
+    const uploaded = await uploadToDrive({ buffer: file.buffer, originalname: file.originalname, mimetype: file.mimetype })
+    driveId = uploaded.id
+    url = driveId
+  } else {
+    // fallback local disk (when Drive not configured)
+    const safe = file.originalname.replace(/[^a-zA-Z0-9.\-_]/g, '_')
+    const filename = `${Date.now()}-${safe}`
+    const dest = path.join(process.cwd(), 'chat-uploads', filename)
+    if (!fs.existsSync(path.dirname(dest))) fs.mkdirSync(path.dirname(dest), { recursive: true })
+    fs.writeFileSync(dest, file.buffer)
+    driveId = filename
+    url = `/chat-uploads/${filename}`
+  }
+
   const item = await FileItem.create({
     name: file.originalname,
     originalName: file.originalname,
     mimeType: file.mimetype || 'application/octet-stream',
     type: kind,
     size: file.size,
-    url: `/chat-uploads/${file.filename}`,
+    url: url,
     owner: me.name,
     permission: 'private',
-    // PHASE: EMPLOYEE CHAT ATTACHMENT PRIVACY — chat files are conversation
-    // attachments, not company files. The Files module filters on this field,
-    // so this record can never surface in My Files / Company Files / Shared
-    // Files / search / storage counts.
     source: 'chat',
   })
 
@@ -423,20 +370,11 @@ export async function uploadChatAttachment(userId, conversationId, file) {
   }
 }
 
-// Resolve an attachment for download. The caller must be a participant of the
-// conversation the file was sent in AND the file must actually belong to that
-// conversation (a message in it references the fileId), so a participant of
-// one conversation can never fetch another conversation's attachment by id.
-// Returns the on-disk path so the route can stream it without ever exposing
-// the filesystem to the client.
 export async function getChatAttachment(userId, conversationId, fileId) {
   assertObjectId(fileId, 'file id')
   const conversation = await loadConversation(conversationId)
   assertParticipant(conversation, userId)
 
-  // Ownership binding: the attachment is downloadable only when a message of
-  // THIS conversation carries this fileId. An uploaded-but-never-sent file (or
-  // a file id guessed from another conversation) resolves to 404.
   const message = await Message.findOne({
     conversation: conversation._id,
     'attachment.fileId': fileId,
@@ -448,9 +386,13 @@ export async function getChatAttachment(userId, conversationId, fileId) {
   const item = await FileItem.findById(fileId).lean()
   if (!item || item.source === 'files') throw new ApiError(404, 'Attachment not found')
 
+  const isDrive = item.url && !String(item.url).startsWith('/')
+  if (isDrive) {
+    return { driveId: String(item.url), name: item.originalName || item.name, isDrive: true }
+  }
   const diskName = String(item.url || '').replace(/^\/chat-uploads\//, '')
   if (!diskName || /[/\\]/.test(diskName)) throw new ApiError(400, 'Invalid file path')
-  return { absPath: `chat-uploads/${diskName}`, name: item.originalName || item.name }
+  return { absPath: `chat-uploads/${diskName}`, name: item.originalName || item.name, isDrive: false }
 }
 
 export async function markConversationRead(userId, conversationId) {
@@ -475,9 +417,6 @@ export async function markConversationRead(userId, conversationId) {
   return { updated: result.modifiedCount || 0 }
 }
 
-// ---------------------------------------------------------------------------
-// Group membership management
-// ---------------------------------------------------------------------------
 export async function addGroupMember(userId, conversationId, newUserId) {
   assertObjectId(newUserId, 'user id')
   const me = await resolveInternalUser(userId)
@@ -546,8 +485,6 @@ export async function leaveGroup(userId, conversationId) {
 
   const remaining = await Conversation.findById(conversation._id).lean()
   if (!remaining || (remaining.participants || []).length === 0) {
-    // Last member out — the empty conversation is removed (messages remain in
-    // the Message collection but are unreachable without a conversation).
     await Conversation.deleteOne({ _id: conversation._id })
   } else {
     const memberIds = (remaining.participants || []).map((p) => p.user)

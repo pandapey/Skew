@@ -7,9 +7,10 @@ function resolveSrc(src) {
     const base = (import.meta.env.VITE_API_BASE_URL || 'https://skew-server-317n.onrender.com/api').replace(/\/api$/, '')
     return `${base}${src}`
   }
-  // Drive fileId (no slash, long alphanumeric) -> direct Drive view link
+  // Drive fileId (no slash, long alphanumeric) -> proxy via server (works without public share)
   if (/^[a-zA-Z0-9_-]{20,}$/.test(src) && !src.includes('.')) {
-    return `https://drive.google.com/uc?export=view&id=${src}`
+    const base = (import.meta.env.VITE_API_BASE_URL || 'https://skew-server-317n.onrender.com/api').replace(/\/api$/, '')
+    return `${base}/api/auth/avatar/${src}`
   }
   return src
 }

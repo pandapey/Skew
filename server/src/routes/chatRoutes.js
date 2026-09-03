@@ -1,15 +1,3 @@
-// Chat routes — internal staff messaging (Admin / HR / Manager / Employee).
-//
-// SECURITY:
-//   * Every route is guarded by `protect, blockClient` — Clients get 403 and
-//     cannot reach any internal chat endpoint (frontend hiding is not the
-//     enforcement; the server rejects them here).
-//   * Conversation-scoped routes additionally verify participant membership
-//     inside chatService (assertParticipant), and group member management is
-//     restricted to the group creator or an Admin-role user.
-//   * Static segments ('users', 'conversations/direct', 'conversations/groups')
-//     are declared BEFORE '/conversations/:id' so they are never shadowed by
-//     the parameter route.
 import { Router } from 'express'
 import { protect, blockClient } from '../middleware/auth.js'
 import { uploadChat } from '../middleware/upload.js'
@@ -19,30 +7,40 @@ import * as chat from '../controllers/chatController.js'
 const router = Router()
 
 router.use(protect, blockClient)
-
-// Internal user directory for the "start a chat" picker.
 router.get('/users', asyncHandler(chat.listUsers))
-
-// Conversation collection (list / find-or-create).
 router.get('/conversations', asyncHandler(chat.listConversations))
-// PHASE: EMPLOYEE CHAT (REQUIREMENT 7) — total unread badge count.
 router.get('/unread-count', asyncHandler(chat.unreadCount))
+router.get('/presence', asyncHandler(chat.presence))
+router.get('/blocked', asyncHandler(chat.blocked))
+router.post('/block', asyncHandler(chat.block))
+router.delete('/block/:userId', asyncHandler(chat.unblock))
 router.post('/conversations/direct', asyncHandler(chat.createDirect))
 router.post('/conversations/groups', asyncHandler(chat.createGroup))
-
-// Single conversation + messages.
+router.get('/join/:code', asyncHandler(chat.joinInvite))
 router.get('/conversations/:id', asyncHandler(chat.getConversation))
+router.delete('/conversations/:id', asyncHandler(chat.deleteConversation))
+router.patch('/conversations/:id', asyncHandler(chat.updateGroup))
+router.post('/conversations/:id/admin', asyncHandler(chat.setAdmin))
+router.post('/conversations/:id/settings', asyncHandler(chat.setSettings))
+router.post('/conversations/:id/invite', asyncHandler(chat.invite))
+router.post('/conversations/:id/pref', asyncHandler(chat.pref))
+router.post('/conversations/:id/clear', asyncHandler(chat.clear))
 router.get('/conversations/:id/messages', asyncHandler(chat.listMessages))
+router.get('/conversations/:id/messages/search', asyncHandler(chat.searchMessages))
+router.get('/conversations/:id/starred', asyncHandler(chat.starred))
+router.get('/conversations/:id/media', asyncHandler(chat.media))
 router.post('/conversations/:id/messages', asyncHandler(chat.sendMessage))
+router.post('/conversations/:id/forward', asyncHandler(chat.forward))
+router.patch('/conversations/:id/messages/:messageId', asyncHandler(chat.editMessage))
+router.delete('/conversations/:id/messages/:messageId', asyncHandler(chat.deleteMessage))
+router.post('/conversations/:id/messages/:messageId/star', asyncHandler(chat.star))
+router.post('/conversations/:id/messages/:messageId/react', asyncHandler(chat.react))
+router.post('/conversations/:id/messages/:messageId/poll', asyncHandler(chat.pollVote))
+router.get('/conversations/:id/messages/:messageId/info', asyncHandler(chat.info))
 router.post('/conversations/:id/read', asyncHandler(chat.markRead))
-
-// Attachments — upload via multer (bytes land in chat-uploads/, outside the
-// public static dir) and download through an authenticated, participant-checked
-// route so chat files are never reachable by URL guessing.
+router.post('/conversations/:id/delivered', asyncHandler(chat.markDelivered))
 router.post('/conversations/:id/attachments', uploadChat.single('file'), asyncHandler(chat.uploadAttachment))
 router.get('/conversations/:id/attachments/:fileId', asyncHandler(chat.downloadAttachment))
-
-// Group membership management.
 router.post('/conversations/:id/members', asyncHandler(chat.addMember))
 router.delete('/conversations/:id/members/:userId', asyncHandler(chat.removeMember))
 router.post('/conversations/:id/leave', asyncHandler(chat.leaveGroup))

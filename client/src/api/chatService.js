@@ -1,47 +1,61 @@
-// Chat API service — internal staff messaging (Admin / HR / Manager / Employee).
-// The server guards every endpoint with `protect, blockClient` and enforces
-// participant membership / group management rules server-side; this layer only
-// describes the REST surface.
 import apiClient from './client'
 
 export const chatApi = {
-  // Internal user directory for the "start a chat" picker.
+
   users: async (params = {}) => apiClient.get('/chat/users', { params }),
 
-  // My conversations (with last message + unread count).
   conversations: async (params = {}) => apiClient.get('/chat/conversations', { params }),
 
-  // PHASE: EMPLOYEE CHAT (REQUIREMENT 7) — total unread messages across all of
-  // my conversations, for the sidebar badge.
   unreadCount: async () => apiClient.get('/chat/unread-count'),
 
-  // Find-or-create a direct conversation with another staff user.
+  presence: async (ids) => apiClient.get('/chat/presence', { params: { ids: ids.join(',') }, skipErrorToast: true }),
+
+  blocked: async () => apiClient.get('/chat/blocked'),
+  block: async (userId) => apiClient.post('/chat/block', { userId }),
+  unblock: async (userId) => apiClient.delete(`/chat/block/${userId}`),
+
   createDirect: async (userId) => apiClient.post('/chat/conversations/direct', { userId }),
 
-  // Create a group conversation.
   createGroup: async (payload) => apiClient.post('/chat/conversations/groups', payload),
 
   get: async (id) => apiClient.get(`/chat/conversations/${id}`),
+  updateGroup: async (id, payload) => apiClient.patch(`/chat/conversations/${id}`, payload),
+  setAdmin: async (id, userId, makeAdmin = true) => apiClient.post(`/chat/conversations/${id}/admin`, { userId, makeAdmin }),
+  setSettings: async (id, payload) => apiClient.post(`/chat/conversations/${id}/settings`, payload),
+  invite: async (id) => apiClient.post(`/chat/conversations/${id}/invite`),
+  join: async (code) => apiClient.get(`/chat/join/${code}`),
+  pref: async (id, payload) => apiClient.post(`/chat/conversations/${id}/pref`, payload),
+  clear: async (id) => apiClient.post(`/chat/conversations/${id}/clear`),
+  deleteConversation: async (id) => apiClient.delete(`/chat/conversations/${id}`),
 
   messages: async (id, params = {}) => apiClient.get(`/chat/conversations/${id}/messages`, { params }),
 
-  // Send text, an attachment payload (from uploadAttachment), or both.
-  sendMessage: async (id, { text, attachment } = {}) =>
-    apiClient.post(`/chat/conversations/${id}/messages`, { text, attachment }),
+  searchMessages: async (id, q) => apiClient.get(`/chat/conversations/${id}/messages/search`, { params: { q } }),
+  starred: async (id) => apiClient.get(`/chat/conversations/${id}/starred`),
+  media: async (id, kind) => apiClient.get(`/chat/conversations/${id}/media`, { params: { kind } }),
 
-  // Upload a chat file; returns attachment metadata to pass to sendMessage.
-  // No manual Content-Type: the browser must generate the multipart boundary.
+  sendMessage: async (id, { text, attachment, replyTo, forwarded, messageType, location, contactCard, poll, viewOnce } = {}) =>
+    apiClient.post(`/chat/conversations/${id}/messages`, { text, attachment, replyTo, forwarded, messageType, location, contactCard, poll, viewOnce }),
+
+  forward: async (targetId, messageId) => apiClient.post(`/chat/conversations/${targetId}/forward`, { messageId }),
+
+  editMessage: async (id, messageId, text) => apiClient.patch(`/chat/conversations/${id}/messages/${messageId}`, { text }),
+  deleteMessage: async (id, messageId, forEveryone = false) => apiClient.delete(`/chat/conversations/${id}/messages/${messageId}`, { params: { forEveryone } }),
+  star: async (id, messageId) => apiClient.post(`/chat/conversations/${id}/messages/${messageId}/star`),
+  react: async (id, messageId, emoji) => apiClient.post(`/chat/conversations/${id}/messages/${messageId}/react`, { emoji }),
+  pollVote: async (id, messageId, optionIndex) => apiClient.post(`/chat/conversations/${id}/messages/${messageId}/poll`, { optionIndex }),
+  info: async (id, messageId) => apiClient.get(`/chat/conversations/${id}/messages/${messageId}/info`),
+
   uploadAttachment: async (id, file) => {
     const fd = new FormData()
     fd.append('file', file)
     return apiClient.post(`/chat/conversations/${id}/attachments`, fd)
   },
 
-  // Authenticated URL for an attachment (download + inline preview). The bytes
-  // are served only through this participant-checked route.
   attachmentUrl: (id, fileId) => `/chat/conversations/${id}/attachments/${fileId}`,
 
   markRead: async (id) => apiClient.post(`/chat/conversations/${id}/read`, {}, { skipErrorToast: true }),
+  markDelivered: async (id, messageIds) => apiClient.post(`/chat/conversations/${id}/delivered`, { messageIds }),
 
   addMember: async (id, userId) => apiClient.post(`/chat/conversations/${id}/members`, { userId }),
 

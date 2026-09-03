@@ -1,20 +1,18 @@
-// Shared chat display helpers + react-query key constants. Everything here is
-// presentation-only; data always comes from the chat API (server-verified
-// participant/membership checks), never recomputed client-side.
 import dayjs from 'dayjs'
 import relativeTime from 'dayjs/plugin/relativeTime'
 
 dayjs.extend(relativeTime)
 
-// Query keys used by the chat screens (kept in sync with useRealtimeSync.jsx).
 export const QK = {
   users: ['chat-users'],
   conversations: ['chat-conversations'],
   conversation: (id) => ['chat-conversation', id],
   messages: (id) => ['chat-messages', id],
+  presence: (ids) => ['chat-presence', ids?.join?.(',') || ''],
+  starred: (id) => ['chat-starred', id],
+  media: (id) => ['chat-media', id],
 }
 
-// "12:04 PM" for today's messages, otherwise "12 Apr".
 export function messageTime(iso) {
   if (!iso) return ''
   const d = dayjs(iso)
@@ -22,7 +20,6 @@ export function messageTime(iso) {
   return d.isSame(dayjs(), 'day') ? d.format('hh:mm A') : d.format('DD MMM, hh:mm A')
 }
 
-// "12:04 PM" compact variant for the conversation list.
 export function listTime(iso) {
   if (!iso) return ''
   const d = dayjs(iso)
@@ -30,11 +27,17 @@ export function listTime(iso) {
   return d.isSame(dayjs(), 'day') ? d.format('hh:mm A') : d.format('DD MMM')
 }
 
-// Direct-conversation display participant: `conversation.other` is set by the
-// server for direct chats.
+export function lastSeenText(iso) {
+  if (!iso) return 'offline'
+  const d = dayjs(iso)
+  if (!d.isValid()) return 'offline'
+  if (d.isSame(dayjs(), 'day')) return `last seen today at ${d.format('hh:mm A')}`
+  if (d.isSame(dayjs().subtract(1, 'day'), 'day')) return `last seen yesterday at ${d.format('hh:mm A')}`
+  return `last seen ${d.format('DD MMM, hh:mm A')}`
+}
+
 export const directPeer = (conversation) => (conversation?.isGroup ? null : conversation?.other || null)
 
-// Human-readable file size ("1.2 MB", "340 KB"…).
 export function formatBytes(bytes) {
   const n = Number(bytes) || 0
   if (n <= 0) return ''
@@ -43,3 +46,22 @@ export function formatBytes(bytes) {
   const value = n / 1024 ** i
   return `${value >= 10 || i === 0 ? Math.round(value) : value.toFixed(1)} ${units[i]}`
 }
+
+export function tickStatus(message, meId, participantCount = 1) {
+  if (String(message.sender) !== String(meId)) return null
+  if (message.isDeletedForEveryone || message.isDeleted) return null
+  const readBy = (message.readBy || []).length
+  const deliveredTo = (message.deliveredTo || []).length
+  const needed = Math.max(1, participantCount - 1)
+  if (readBy >= needed) return 'read'
+  if (deliveredTo >= Math.min(needed, 1) || deliveredTo > 0) return 'delivered'
+  return 'sent'
+}
+
+export function groupedReactions(reactions = []) {
+  const map = {}
+  reactions.forEach((r) => { map[r.emoji] = (map[r.emoji] || 0) + 1 })
+  return Object.entries(map).map(([emoji, count]) => ({ emoji, count }))
+}
+
+export const QUICK_EMOJIS = ['❤️', '😂', '😮', '😢', '🙏', '👍']

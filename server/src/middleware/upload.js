@@ -29,13 +29,23 @@ const ALLOWED_CHAT_TYPES = [
   'application/zip', 'application/x-zip-compressed',
 ]
 
+const BLOCKED_CHAT_MIMES = [
+  'application/x-msdownload', 'application/x-msdos-program',
+  'application/x-sh', 'application/x-executable',
+]
 export const uploadChat = multer({
   storage,
   limits: { fileSize: 25 * 1024 * 1024 },
-  fileFilter: (req, file, cb) =>
-    ALLOWED_CHAT_TYPES.some((t) => file.mimetype.startsWith(t))
-      ? cb(null, true)
-      : cb(filterError('File type is not allowed in chat')),
+  fileFilter: (req, file, cb) => {
+    const mime = (file.mimetype || '').toLowerCase()
+    if (BLOCKED_CHAT_MIMES.some((t) => mime.startsWith(t) || mime.includes('executable'))) {
+      return cb(filterError('Executable files are not allowed in chat'))
+    }
+    if (mime === 'application/x-msdownload' || file.originalname.toLowerCase().endsWith('.exe')) {
+      return cb(filterError('Executable files are not allowed in chat'))
+    }
+    return cb(null, true)
+  },
 })
 
 const ALLOWED_PROFILE_TYPES = [

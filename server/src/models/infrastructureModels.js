@@ -50,5 +50,18 @@ const hostingSchema = new Schema(
 
 hostingSchema.index({ expiresOn: 1 })
 
+const registrarSchema = new Schema(
+  {
+    name: { type: String, required: true, trim: true, maxlength: 120, unique: true },
+  },
+  opts
+)
+registrarSchema.index({ name: 1 }, { unique: true, collation: { locale: 'en', strength: 2 } })
+registrarSchema.pre('save', function (next) {
+  if (this.name) this.name = String(this.name).trim()
+  next()
+})
+
 export const Domain = model('Domain', domainSchema)
 export const HostingPlan = model('HostingPlan', hostingSchema)
+export const Registrar = model('Registrar', registrarSchema)

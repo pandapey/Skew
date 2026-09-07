@@ -185,7 +185,11 @@ export default function TaskHistory() {
         )}
       </div>
     ) },
-    { key: 'projectName', header: 'Project', render: (t) => <span className={t.projectName && t.projectName !== 'No Project' ? 'text-muted' : 'text-muted italic'}>{t.projectName || (t.project ? '\u2014' : 'No Project')}</span> },
+    { key: 'projectName', header: 'Project', render: (t) => {
+      const name = t.projectName || (t.project ? '\u2014' : 'General Task')
+      const isGeneral = !t.project && (!t.projectName || t.projectName === 'General Task' || t.projectName === 'No Project')
+      return <span className={isGeneral ? 'inline-flex items-center rounded-full bg-accent/10 px-2 py-0.5 text-xs font-semibold text-accent' : 'text-muted'}>{name}</span>
+    } },
     { key: 'assignee', header: 'Assignee', render: (t) => t.assignee || '\u2014' },
     { key: 'startedAt', header: 'Started', render: (t) => formatDateTime(t.startedAt) },
     { key: 'durationSec', header: 'Duration', render: (t) => <DurationCell task={t} /> },

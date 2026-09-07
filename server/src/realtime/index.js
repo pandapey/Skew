@@ -10,14 +10,54 @@ const typingMap = new Map()
 async function setUserOnline(userId, isOnline) {
   try {
     const { UserPresence } = await import('../models/chatModels.js')
-    await UserPresence.findOneAndUpdate(
-      { user: userId },
-      { isOnline, lastSeen: new Date(), socketCount: isOnline ? 1 : 0 },
-      { upsert: true, new: true }
-    )
+    if (isOnline) {
+      await UserPresence.findOneAndUpdate(
+        { user: userId },
+        { $inc: { socketCount: 1 }, $set: { isOnline: true, lastSeen: new Date() } },
+        { upsert: true, new: true, setDefaultsOnInsert: true }
+      )
+    } else {
+      await UserPresence.findOneAndUpdate(
+        { user: userId },
+        { $inc: { socketCount: -1 }, $set: { lastSeen: new Date() } },
+        { upsert: true, new: true }
+      )
+      const doc = await (await import('../models/chatModels.js')).UserPresence.findOne({ user: userId }).lean()
+      if (doc && doc.socketCount <= 0) {
+        await (await import('../models/chatModels.js')).UserPresence.updateOne({ user: userId }, { $set: { isOnline: false, socketCount: 0 } })
+      }
+      const fresh = await (await import('../models/chatModels.js')).UserPresence.findOne({ user: userId }).lean()
+      isOnline = !!fresh?.isOnline && (fresh.socketCount || 0) > 0
+      if (!isOnline) {
+        // ensure offline
+      } else {
+        // still online due to other sockets, don't emit offline
+        presenceMap.set(String(userId), { isOnline: true, lastSeen: new Date(), count: fresh.socketCount })
+        if (io) io.to('global').emit('presence:update', { userId: String(userId), isOnline: true, lastSeen: new Date() })
+        return
+      }
+    }
   } catch {}
-  presenceMap.set(String(userId), { isOnline, lastSeen: new Date() })
-  if (io) io.to('global').emit('presence:update', { userId: String(userId), isOnline, lastSeen: new Date() })
+  // update in-memory map
+  try {
+    const { UserPresence } = await import('../models/chatModels.js')
+    const fresh = await UserPresence.findOne({ user: userId }).lean()
+    const count = fresh?.socketCount || 0
+    const online = !!fresh?.isOnline && count > 0
+    presenceMap.set(String(userId), { isOnline: online, lastSeen: fresh?.lastSeen || new Date(), count })
+    if (io) io.to('global').emit('presence:update', { userId: String(userId), isOnline: online, lastSeen: fresh?.lastSeen || new Date() })
+  } catch {
+    presenceMap.set(String(userId), { isOnline, lastSeen: new Date(), count: isOnline ? 1 : 0 })
+    if (io) io.to('global').emit('presence:update', { userId: String(userId), isOnline, lastSeen: new Date() })
+  }
+}
+
+async function syncPresenceFromDB(userId) {
+  try {
+    const { UserPresence } = await import('../models/chatModels.js')
+    const doc = await UserPresence.findOne({ user: userId }).lean()
+    if (doc) presenceMap.set(String(userId), { isOnline: !!doc.isOnline && (doc.socketCount||0)>0, lastSeen: doc.lastSeen, count: doc.socketCount||0 })
+  } catch {}
 }
 
 async function handleTyping(socket, data) {
@@ -77,7 +117,7 @@ export function initRealtime(server) {
     }
   })
 
-  io.on('connection', (socket) => {
+  io.on('connection', async (socket) => {
     const { user } = socket.data
     if (!user) return socket.disconnect(true)
     if (user.role === 'Client') {
@@ -86,11 +126,10 @@ export function initRealtime(server) {
       socket.join('global')
       socket.join(`user:${user._id}`)
       const uid = String(user._id)
-      const cur = presenceMap.get(uid) || { count: 0, isOnline: false }
-      const nextCount = (cur.count || 0) + 1
-      presenceMap.set(uid, { count: nextCount, isOnline: true, lastSeen: new Date() })
-      if (nextCount === 1) {
-        setUserOnline(user._id, true)
+      const before = presenceMap.get(uid)?.count || 0
+      await setUserOnline(user._id, true)
+      const after = presenceMap.get(uid)
+      if (before === 0 && after?.isOnline) {
         socket.broadcast.to('global').emit('user:online', { userId: uid })
       }
       socket.emit('presence:sync', Array.from(presenceMap.entries()).map(([id, v]) => ({ userId: id, isOnline: v.isOnline, lastSeen: v.lastSeen })))
@@ -122,17 +161,12 @@ export function initRealtime(server) {
       try {
         if (user.role === 'Client') return
         const uid = String(user._id)
-        const cur = presenceMap.get(uid)
-        if (!cur) return
-        const nextCount = Math.max(0, (cur.count || 1) - 1)
-        if (nextCount === 0) {
-          presenceMap.set(uid, { count: 0, isOnline: false, lastSeen: new Date() })
-          await setUserOnline(user._id, false)
-          socket.broadcast.to('global').emit('user:offline', { userId: uid, lastSeen: new Date() })
-          const { UserPresence } = await import('../models/chatModels.js')
-          await UserPresence.findOneAndUpdate({ user: user._id }, { isOnline: false, lastSeen: new Date(), socketCount: 0 }, { upsert: true })
-        } else {
-          presenceMap.set(uid, { ...cur, count: nextCount })
+        const before = presenceMap.get(uid)
+        if (!before) return
+        await setUserOnline(user._id, false)
+        const after = presenceMap.get(uid)
+        if (before.isOnline && !after?.isOnline) {
+          socket.broadcast.to('global').emit('user:offline', { userId: uid, lastSeen: after?.lastSeen || new Date() })
         }
       } catch {}
     })

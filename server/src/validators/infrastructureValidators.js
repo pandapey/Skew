@@ -30,11 +30,6 @@ export const validateDomainPayload = (req, _res, next) => {
     }
   }
 
-  if (b.renewalCost != null && String(b.renewalCost).trim() !== '') {
-    const n = Number(b.renewalCost)
-    if (!Number.isFinite(n) || n < 0) errors.push('Renewal cost must be zero or more')
-  }
-
   if (errors.length) return next(new ApiError(422, `Validation failed: ${errors.join(', ')}`))
   next()
 }
@@ -58,11 +53,6 @@ export const validateHostingPayload = (req, _res, next) => {
       const ex = new Date(b.expiresOn)
       if (st > ex) errors.push('Start date cannot be after the expiry date')
     }
-  }
-
-  if (b.renewalCost != null && String(b.renewalCost).trim() !== '') {
-    const n = Number(b.renewalCost)
-    if (!Number.isFinite(n) || n < 0) errors.push('Renewal cost must be zero or more')
   }
 
   if (b.provider != null && String(b.provider).length > 120)

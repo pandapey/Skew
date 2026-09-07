@@ -38,11 +38,16 @@ export const uploadChat = multer({
   limits: { fileSize: 25 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     const mime = (file.mimetype || '').toLowerCase()
+    const name = (file.originalname || '').toLowerCase()
     if (BLOCKED_CHAT_MIMES.some((t) => mime.startsWith(t) || mime.includes('executable'))) {
       return cb(filterError('Executable files are not allowed in chat'))
     }
-    if (mime === 'application/x-msdownload' || file.originalname.toLowerCase().endsWith('.exe')) {
+    if (mime === 'application/x-msdownload' || name.endsWith('.exe') || name.endsWith('.bat') || name.endsWith('.sh') || name.endsWith('.dll')) {
       return cb(filterError('Executable files are not allowed in chat'))
+    }
+    const allowed = ALLOWED_CHAT_TYPES.some((t) => (t.endsWith('/') ? mime.startsWith(t) : mime === t))
+    if (!allowed) {
+      return cb(filterError(`File type "${file.mimetype || 'unknown'}" is not allowed in chat`))
     }
     return cb(null, true)
   },
@@ -66,3 +71,4 @@ export const uploadProfileDoc = multer({
       ? cb(null, true)
       : cb(filterError('File type is not allowed for profile documents')),
 })
+

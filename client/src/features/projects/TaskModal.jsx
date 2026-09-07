@@ -17,21 +17,17 @@ export function TaskModal({
 }) {
   const form = useForm({ resolver: zodResolver(taskSchema), defaultValues: DEFAULTS })
   const [pendingFiles, setPendingFiles] = useState([])
-  const [tried, setTried] = useState(false)
   const fileInputRef = useRef(null)
 
   useEffect(() => {
-    if (open) { form.reset(editing ? { ...DEFAULTS, ...editing } : DEFAULTS); setPendingFiles([]) }
-  }, [open, editing]) // eslint-disable-line react-hooks/exhaustive-deps
+    if (open) {
+      const initial = editing ? { ...DEFAULTS, ...editing, project: editing.project || '' } : DEFAULTS
+      form.reset(initial); setPendingFiles([])
+    }
+  }, [open, editing])
 
   const isBug = form.watch('type') === 'Bug'
-
-  // PHASE: EMPLOYEE TASK FORM — the two-step "pick a project, then open the
-  // task form" flow is merged into ONE form: the project is a field inside the
-  // modal itself. Callers that pass `projects` get the inline picker (with a
-  // required guard); callers that don't (edit modes) are unchanged.
   const selectedProject = projects.find((p) => p.id === form.watch('project'))
-  const projectRequired = projects.length > 0
 
   const assigneeOptions = [
     { value: '', label: 'Unassigned' },
@@ -50,19 +46,16 @@ export function TaskModal({
   }
 
   const submit = form.handleSubmit((v) => {
+    const normalized = { ...v, project: v.project && String(v.project).trim() ? String(v.project).trim() : null, sprint: v.project && String(v.project).trim() ? v.sprint : null }
     if (employeeMode) {
-      const { dueDate: _ignored, ...rest } = v
+      const { dueDate: _ignored, ...rest } = normalized
       onSubmit({ ...rest, files: pendingFiles })
       return
     }
-    onSubmit(v)
+    onSubmit(normalized)
   })
 
   const requestSubmit = () => {
-    if (projectRequired && !form.watch('project')) {
-      setTried(true)
-      return
-    }
     submit()
   }
 
@@ -72,24 +65,17 @@ export function TaskModal({
       onClose={onClose}
       title={`${editing ? 'Edit' : 'Add'} Task${projectName || selectedProject?.name ? ` · ${projectName || selectedProject.name}` : ''}`}
       size="lg"
-      footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button loading={saving} disabled={(projectRequired && !form.watch('project')) || (employeeMode && projects.length === 0)} onClick={requestSubmit}>{editing ? 'Save' : 'Create'}</Button></>}
+      footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button loading={saving} onClick={requestSubmit}>{editing ? 'Save' : 'Create'}</Button></>}
     >
       <form onSubmit={submit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        {projects.length > 0 ? (
-          <div className="sm:col-span-2">
-            <Select
-              label="Project"
-              placeholder="Select a project"
-              error={projectRequired && tried && !form.watch('project') ? 'Please select a project' : undefined}
-              options={projects.map((p) => ({ value: p.id, label: p.name }))}
-              {...form.register('project')}
-            />
-          </div>
-        ) : (
-          <p className="sm:col-span-2 mb-1 text-xs font-medium text-muted">
-            You do not have access to any projects yet, so a task cannot be created.
-          </p>
-        )}
+        <div className="sm:col-span-2">
+          <Select
+            label="Project"
+            placeholder="No Project / General Task"
+            options={[{ value: '', label: 'No Project / General Task' }, ...projects.map((p) => ({ value: p.id, label: p.name }))]}
+            {...form.register('project')}
+          />
+        </div>
         <div className="sm:col-span-2"><Input label="Title" error={form.formState.errors.title?.message} {...form.register('title')} /></div>
         <div className="sm:col-span-2"><Textarea label="Description" rows={2} {...form.register('description')} /></div>
         {!employeeMode && (

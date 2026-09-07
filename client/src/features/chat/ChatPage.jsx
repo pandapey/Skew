@@ -92,7 +92,7 @@ function Tick({ status }) {
   return null
 }
 
-function ConversationItem({ conversation, active, onClick, onAction }) {
+function ConversationItem({ conversation, active, onClick }) {
   const { user: me } = useAuth()
   const peer = directPeer(conversation)
   const displayName = conversation.isGroup ? conversation.name : (peer?.name || 'Unknown user')
@@ -102,30 +102,24 @@ function ConversationItem({ conversation, active, onClick, onAction }) {
   const preview = !last ? 'No messages yet' : `${isMine ? 'You: ' : ''}${last.hasAttachment ? '📎 Attachment' : (last.text || '')}`
   const unread = conversation.unreadCount || 0
   return (
-    <div className={cn('group relative flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition', active ? 'bg-gradient-to-r from-primary to-accent shadow-glow-primary' : 'hover:bg-black/5 dark:hover:bg-white/10')}>
-      <button type="button" onClick={onClick} className="flex flex-1 items-center gap-3 text-left">
-        <div className="relative">
+    <div className={cn('relative flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition overflow-hidden min-w-0', active ? 'bg-gradient-to-r from-primary to-accent shadow-glow-primary' : 'hover:bg-black/5 dark:hover:bg-white/10')}>
+      <button type="button" onClick={onClick} className="flex min-w-0 flex-1 items-center gap-3 overflow-hidden text-left">
+        <div className="relative shrink-0">
           <Avatar name={conversation.isGroup ? conversation.name : (peer?.name || '?')} src={avatarSrc} size={44} ring={false} />
           {conversation.isPinned && <FiBookmark className="absolute -right-1 -top-1 h-3.5 w-3.5 rounded-full bg-amber-400 p-0.5 text-white" />}
           {peer?.isOnline && <span className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-white bg-emerald-500" />}
         </div>
-        <span className="min-w-0 flex-1">
-          <span className="flex items-baseline justify-between gap-2">
-            <span className={cn('truncate text-sm font-semibold flex items-center gap-1', active && 'text-white')}>{displayName} {conversation.isMuted && <FiVolumeX className="h-3 w-3 opacity-60" />} {conversation.isArchived && <FiArchive className="h-3 w-3 opacity-60" />}</span>
-            {last?.at && <span className={cn('flex-none text-[11px]', active ? 'text-white/80' : 'text-muted')}>{listTime(last.at)}</span>}
+        <span className="min-w-0 flex-1 overflow-hidden">
+          <span className="flex min-w-0 items-baseline justify-between gap-2 overflow-hidden">
+            <span className={cn('min-w-0 flex-1 truncate text-sm font-semibold flex items-center gap-1 overflow-hidden', active && 'text-white')}>{displayName} {conversation.isMuted && <FiVolumeX className="h-3 w-3 shrink-0 opacity-60" />} {conversation.isArchived && <FiArchive className="h-3 w-3 shrink-0 opacity-60" />}</span>
+            {last?.at && <span className={cn('flex-none shrink-0 text-[11px]', active ? 'text-white/80' : 'text-muted')}>{listTime(last.at)}</span>}
           </span>
-          <span className="flex items-center justify-between gap-2">
-            <span className={cn('truncate text-xs', active ? 'text-white/85' : 'text-muted')}>{preview}</span>
-            {unread > 0 && <span className={cn('flex h-5 min-w-5 flex-none items-center justify-center rounded-full px-1.5 text-[11px] font-bold', active ? 'bg-white text-primary' : 'bg-primary text-white')}>{unread > 99 ? '99+' : unread}</span>}
+          <span className="flex min-w-0 items-center justify-between gap-2 overflow-hidden">
+            <span className={cn('min-w-0 flex-1 truncate text-xs overflow-hidden', active ? 'text-white/85' : 'text-muted')}>{preview}</span>
+            {unread > 0 && <span className={cn('flex h-5 min-w-5 flex-none shrink-0 items-center justify-center rounded-full px-1.5 text-[11px] font-bold', active ? 'bg-white text-primary' : 'bg-primary text-white')}>{unread > 99 ? '99+' : unread}</span>}
           </span>
         </span>
       </button>
-      <div className="hidden group-hover:flex items-center gap-1">
-        <button onClick={() => onAction?.('pin', conversation)} className="rounded-md p-1 hover:bg-black/10" title={conversation.isPinned ? 'Unpin' : 'Pin'}><FiBookmark className="h-3.5 w-3.5" /></button>
-        <button onClick={() => onAction?.('mute', conversation)} className="rounded-md p-1 hover:bg-black/10" title={conversation.isMuted ? 'Unmute' : 'Mute'}><FiVolumeX className="h-3.5 w-3.5" /></button>
-        <button onClick={() => onAction?.('archive', conversation)} className="rounded-md p-1 hover:bg-black/10" title={conversation.isArchived ? 'Unarchive' : 'Archive'}><FiArchive className="h-3.5 w-3.5" /></button>
-        <button onClick={() => onAction?.('delete', conversation)} className="rounded-md p-1 hover:bg-danger/10 hover:text-danger" title="Delete chat"><FiTrash className="h-3.5 w-3.5" /></button>
-      </div>
     </div>
   )
 }
@@ -133,53 +127,98 @@ function ConversationItem({ conversation, active, onClick, onAction }) {
 function MessageBubble({ message, mine, onReply, onEdit, onDelete, onStar, onReact, onForward, onInfo, meId, participantCount }) {
   const [showMenu, setShowMenu] = useState(false)
   const [showReactions, setShowReactions] = useState(false)
+  const menuTriggerRef = useRef(null)
+  const menuRef = useRef(null)
+  const reactionTriggerRef = useRef(null)
+  const reactionRef = useRef(null)
   const status = tickStatus(message, meId, participantCount)
   const grouped = groupedReactions(message.reactions)
   const isSystem = message.messageType === 'system'
+
+  useEffect(() => {
+    if (!showMenu) return
+    const onDown = (e) => {
+      const t = e.target
+      if (!(t instanceof Node)) return
+      if (menuRef.current?.contains(t) || menuTriggerRef.current?.contains(t)) return
+      setShowMenu(false)
+    }
+    const onKey = (e) => { if (e.key === 'Escape') setShowMenu(false) }
+    const timer = setTimeout(() => {
+      document.addEventListener('pointerdown', onDown, true)
+      document.addEventListener('keydown', onKey)
+    }, 0)
+    return () => {
+      clearTimeout(timer)
+      document.removeEventListener('pointerdown', onDown, true)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [showMenu])
+
+  useEffect(() => {
+    if (!showReactions) return
+    const onDown = (e) => {
+      const t = e.target
+      if (!(t instanceof Node)) return
+      if (reactionRef.current?.contains(t) || reactionTriggerRef.current?.contains(t)) return
+      setShowReactions(false)
+    }
+    const onKey = (e) => { if (e.key === 'Escape') setShowReactions(false) }
+    const timer = setTimeout(() => {
+      document.addEventListener('pointerdown', onDown, true)
+      document.addEventListener('keydown', onKey)
+    }, 0)
+    return () => {
+      clearTimeout(timer)
+      document.removeEventListener('pointerdown', onDown, true)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [showReactions])
+
   if (isSystem) return <div className="flex justify-center"><span className="rounded-full bg-black/5 px-3 py-1 text-[11px] text-muted dark:bg-white/10">{message.text}</span></div>
   if (message.isDeleted || message.isDeletedForEveryone) return (
-    <div className={cn('flex flex-col', mine ? 'items-end' : 'items-start')}>
-      <div className={cn('max-w-[85%] rounded-2xl px-3.5 py-2 text-sm italic opacity-60', mine ? 'rounded-br-md bg-gradient-to-br from-primary/50 to-accent/50 text-white' : 'rounded-bl-md border border-app bg-surface')}>
+    <div className={cn('flex flex-col max-w-full', mine ? 'items-end' : 'items-start')}>
+      <div className={cn('max-w-[85%] sm:max-w-[70%] rounded-2xl px-3.5 py-2 text-sm italic opacity-60 bg-transparent border border-transparent', 'text-black dark:text-white')}>
         <p className="flex items-center gap-1"><FiTrash2 className="h-3 w-3" /> {message.isDeletedForEveryone ? 'This message was deleted' : 'You deleted this message'}</p>
-        <p className={cn('mt-0.5 text-right text-[10px]', mine ? 'text-white/70' : 'text-muted')}>{messageTime(message.createdAt)}</p>
+        <p className="mt-0.5 text-right text-[10px] text-muted">{messageTime(message.createdAt)}</p>
       </div>
     </div>
   )
   return (
-    <div className={cn('group relative flex flex-col', mine ? 'items-end' : 'items-start')}>
-      <div className={cn('max-w-[85%] rounded-2xl px-3.5 py-2 text-sm shadow-floating-sm sm:max-w-[70%] relative', mine ? 'rounded-br-md bg-gradient-to-br from-primary to-accent text-white' : 'rounded-bl-md border border-app bg-surface')}>
+    <div className={cn('group relative flex flex-col max-w-full overflow-hidden', mine ? 'items-end' : 'items-start')}>
+      <div className={cn('max-w-[85%] sm:max-w-[70%] rounded-2xl px-3.5 py-2 text-sm relative bg-transparent border border-transparent shadow-none overflow-hidden break-words', 'text-black dark:text-white')}>
         {message.forwarded && <p className="mb-1 flex items-center gap-1 text-[10px] italic opacity-70"><FiShare2 className="h-3 w-3" /> Forwarded</p>}
         {message.replyTo?.messageId && (
-          <div className={cn('mb-1.5 rounded-lg border-l-2 px-2 py-1 text-xs', mine ? 'border-white/50 bg-white/15' : 'border-primary/40 bg-black/5 dark:bg-white/5')}>
+          <div className={cn('mb-1.5 rounded-lg border-l-2 px-2 py-1 text-xs', 'border-black/10 bg-black/5 dark:border-white/15 dark:bg-white/5')}>
             <p className="font-semibold text-[11px]">{message.replyTo.senderName}</p>
             <p className="truncate opacity-80">{message.replyTo.hasAttachment ? '📎 Attachment' : message.replyTo.text}</p>
           </div>
         )}
-        {message.text && <p className="whitespace-pre-wrap break-words">{message.text} {message.isEdited && <span className="text-[10px] opacity-60">(edited)</span>}</p>}
+        {message.text && <p className="whitespace-pre-wrap break-words break-all">{message.text} {message.isEdited && <span className="text-[10px] opacity-60">(edited)</span>}</p>}
         {message.attachment?.fileId && <AttachmentView attachment={message.attachment} />}
         {grouped.length > 0 && (
-          <div className="mt-1 flex flex-wrap gap-1">
-            {grouped.map((g) => <span key={g.emoji} className="rounded-full border border-white/20 bg-black/10 px-1.5 py-0.5 text-[11px]">{g.emoji} {g.count}</span>)}
+          <div className="mt-1 flex flex-wrap gap-1 max-w-full">
+            {grouped.map((g) => <span key={g.emoji} className="rounded-full border border-black/10 bg-black/5 px-1.5 py-0.5 text-[11px] dark:border-white/10 dark:bg-white/5">{g.emoji} {g.count}</span>)}
           </div>
         )}
-        <p className={cn('mt-0.5 flex items-center justify-end gap-1 text-[10px]', mine ? 'text-white/70' : 'text-muted')}>
+        <p className="mt-0.5 flex items-center justify-end gap-1 text-[10px] text-muted">
           {message.starredBy?.includes(String(meId)) && <FiStar className="h-3 w-3 fill-amber-400 text-amber-400" />}
           {messageTime(message.createdAt)}
           {mine && <Tick status={status} />}
         </p>
-        <div className={cn('absolute top-1 hidden group-hover:flex items-center gap-0.5 rounded-full border border-app bg-surface px-1 py-0.5 shadow', mine ? '-left-16' : '-right-16')}>
-          <button onClick={() => setShowReactions((v) => !v)} className="rounded-full p-1 hover:bg-black/5" title="React"><FiSmile className="h-3.5 w-3.5" /></button>
+        <div className={cn('absolute -top-8 z-10 hidden group-hover:flex items-center gap-0.5 rounded-full border border-app bg-surface px-1 py-0.5 shadow max-w-[calc(100vw-2rem)]', mine ? 'right-2' : 'left-2')}>
+          <button ref={reactionTriggerRef} onClick={() => { setShowReactions((v) => !v); setShowMenu(false) }} className="rounded-full p-1 hover:bg-black/5" title="React"><FiSmile className="h-3.5 w-3.5" /></button>
           <button onClick={() => onReply(message)} className="rounded-full p-1 hover:bg-black/5" title="Reply"><FiCornerUpLeft className="h-3.5 w-3.5" /></button>
-          <button onClick={() => setShowMenu((v) => !v)} className="rounded-full p-1 hover:bg-black/5" title="More"><FiMoreVertical className="h-3.5 w-3.5" /></button>
+          <button ref={menuTriggerRef} onClick={() => { setShowMenu((v) => !v); setShowReactions(false) }} className="rounded-full p-1 hover:bg-black/5" title="More"><FiMoreVertical className="h-3.5 w-3.5" /></button>
         </div>
         {showReactions && (
-          <div className="absolute top-full mt-2 left-0 flex items-center gap-1 rounded-full border border-app bg-surface px-2 py-1 shadow-lg z-20">
+          <div ref={reactionRef} className="absolute left-1/2 top-full z-20 mt-2 flex max-w-[min(260px,calc(100vw-2rem))] -translate-x-1/2 flex-wrap items-center justify-center gap-1 rounded-full border border-app bg-surface px-2 py-1 shadow-lg">
             {QUICK_EMOJIS.map((e) => <button key={e} onClick={() => { onReact(message._id, e); setShowReactions(false) }} className="hover:scale-125 transition text-base">{e}</button>)}
             <button onClick={() => setShowReactions(false)} className="ml-1 text-muted"><FiX className="h-3 w-3" /></button>
           </div>
         )}
         {showMenu && (
-          <div className="absolute right-0 top-8 w-44 rounded-xl border border-app bg-surface shadow-lg z-20 p-1 text-xs">
+          <div ref={menuRef} className="absolute right-2 top-full z-20 mt-2 w-44 max-w-[min(11rem,calc(100vw-2rem))] rounded-xl border border-app bg-surface shadow-lg p-1 text-xs">
             <button onClick={() => { onReply(message); setShowMenu(false) }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 hover:bg-black/5"><FiCornerUpLeft className="h-3.5 w-3.5" /> Reply</button>
             <button onClick={() => { onForward(message); setShowMenu(false) }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 hover:bg-black/5"><FiShare2 className="h-3.5 w-3.5" /> Forward</button>
             <button onClick={() => { navigator.clipboard.writeText(message.text); toast.success('Copied'); setShowMenu(false) }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 hover:bg-black/5"><FiCopy className="h-3.5 w-3.5" /> Copy</button>
@@ -216,12 +255,15 @@ export default function ChatPage() {
   const [typingUsers, setTypingUsers] = useState({})
   const [presence, setPresence] = useState({})
   const [hasMore, setHasMore] = useState(true)
-  const [showEmoji, setShowEmoji] = useState(false)
   const [showAttachMenu, setShowAttachMenu] = useState(false)
   const [isDragOver, setIsDragOver] = useState(false)
   const bottomRef = useRef(null)
   const listRef = useRef(null)
   const fileInputRef = useRef(null)
+  const typingTimeoutRef = useRef(null)
+  const isTypingRef = useRef(false)
+  const headerMenuRef = useRef(null)
+  const headerMenuTriggerRef = useRef(null)
 
   const { data: conversations = [], isLoading, isError, refetch } = useQuery({
     queryKey: QK.conversations,
@@ -402,6 +444,13 @@ export default function ChatPage() {
     if (!activeId) return
     if (pendingAttach) { uploadAttach(pendingAttach.file); return }
     if (!text && !editing) return
+    // stop typing indicator on send
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current)
+    if (isTypingRef.current) {
+      const socket = getSocket()
+      if (socket) socket.emit('chat:stop-typing', { conversationId: activeId })
+      isTypingRef.current = false
+    }
     send({ text, replyTo, viewOnce })
   }
 
@@ -413,13 +462,63 @@ export default function ChatPage() {
     setPendingAttach({ file })
   }
 
-  const handleTyping = (val) => {
+  const handleTyping = useCallback((val) => {
     setDraft(val)
     const socket = getSocket()
     if (!socket || !activeId) return
-    if (val.trim()) socket.emit('chat:typing', { conversationId: activeId })
-    else socket.emit('chat:stop-typing', { conversationId: activeId })
-  }
+    const hasText = !!val.trim()
+    if (hasText) {
+      if (!isTypingRef.current) {
+        socket.emit('chat:typing', { conversationId: activeId })
+        isTypingRef.current = true
+      }
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current)
+      typingTimeoutRef.current = setTimeout(() => {
+        socket.emit('chat:stop-typing', { conversationId: activeId })
+        isTypingRef.current = false
+      }, 1200)
+    } else {
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current)
+      if (isTypingRef.current) {
+        socket.emit('chat:stop-typing', { conversationId: activeId })
+        isTypingRef.current = false
+      }
+    }
+  }, [activeId])
+
+  useEffect(() => {
+    return () => { if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current) }
+  }, [])
+
+  useEffect(() => {
+    // clear typing state when switching conversations
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current)
+    if (isTypingRef.current) {
+      const socket = getSocket()
+      if (socket && activeIdRef.current) socket.emit('chat:stop-typing', { conversationId: activeIdRef.current })
+      isTypingRef.current = false
+    }
+  }, [activeId])
+
+  useEffect(() => {
+    if (!showAttachMenu) return
+    const onDown = (e) => {
+      const t = e.target
+      if (!(t instanceof Node)) return
+      if (headerMenuRef.current?.contains(t) || headerMenuTriggerRef.current?.contains(t)) return
+      setShowAttachMenu(false)
+    }
+    const onKey = (e) => { if (e.key === 'Escape') setShowAttachMenu(false) }
+    const timer = setTimeout(() => {
+      document.addEventListener('pointerdown', onDown, true)
+      document.addEventListener('keydown', onKey)
+    }, 0)
+    return () => {
+      clearTimeout(timer)
+      document.removeEventListener('pointerdown', onDown, true)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [showAttachMenu])
 
   const handleAction = async (action, conv) => {
     try {
@@ -454,7 +553,7 @@ export default function ChatPage() {
   }
 
   return (
-    <div>
+    <div className="overflow-x-hidden">
       <PageHeader title="Chat" subtitle="Internal messaging · Admin, HR, Manager & Employee — WhatsApp style" actions={
         <div className="flex items-center gap-2">
           <Button variant="ghost" icon={FiEdit} onClick={() => setNewChat(true)}>New Chat</Button>
@@ -475,7 +574,7 @@ export default function ChatPage() {
             {isError && <EmptyState icon={FiMessageSquare} title="Could not load conversations" description="Please try again." action={<Button variant="ghost" size="sm" onClick={() => refetch()}>Retry</Button>} />}
             {!isLoading && !isError && filteredConversations.length === 0 && <EmptyState icon={FiMessageSquare} title={search ? 'No matching conversations' : 'No conversations yet'} description={search ? 'Try a different search.' : 'Start a new chat or create a group to get going.'} />}
             <div className="space-y-1">
-              {filteredConversations.map((c) => <ConversationItem key={c._id} conversation={c} active={c._id === activeId} onClick={() => openConversation(c._id)} onAction={handleAction} />)}
+              {filteredConversations.map((c) => <ConversationItem key={c._id} conversation={c} active={c._id === activeId} onClick={() => openConversation(c._id)} />)}
             </div>
           </div>
         </div>
@@ -517,10 +616,10 @@ export default function ChatPage() {
                     <input value={msgSearch} onChange={(e) => setMsgSearch(e.target.value)} placeholder="Search in chat…" className="input h-8 w-36 text-xs" />
                   </div>
                   {showMembersButton && <Button variant="ghost" size="sm" icon={FiInfo} onClick={() => setShowMembers(true)}><span className="hidden sm:inline">Members</span></Button>}
-                  <div className="relative">
+                  <div className="relative" ref={headerMenuTriggerRef}>
                     <Button variant="ghost" size="sm" icon={FiMoreVertical} onClick={() => setShowAttachMenu((v) => !v)} />
                     {showAttachMenu && (
-                      <div className="absolute right-0 top-9 w-56 rounded-xl border border-app bg-surface shadow-lg z-20 p-1 text-xs">
+                      <div ref={headerMenuRef} className="absolute right-0 top-9 w-56 rounded-xl border border-app bg-surface shadow-lg z-20 p-1 text-xs">
                         <button onClick={() => { handleAction('mute', active); setShowAttachMenu(false) }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 hover:bg-black/5"><FiVolumeX className="h-3.5 w-3.5" /> {active.isMuted ? 'Unmute' : 'Mute'}</button>
                         <button onClick={() => { handleAction('pin', active); setShowAttachMenu(false) }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 hover:bg-black/5"><FiBookmark className="h-3.5 w-3.5" /> {active.isPinned ? 'Unpin' : 'Pin'}</button>
                         <button onClick={() => { handleAction('archive', active); setShowAttachMenu(false) }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 hover:bg-black/5"><FiArchive className="h-3.5 w-3.5" /> {active.isArchived ? 'Unarchive' : 'Archive'}</button>
@@ -533,14 +632,14 @@ export default function ChatPage() {
                 </div>
               </div>
 
-              <div ref={listRef} onScroll={handleScroll} className="min-h-0 flex-1 overflow-y-auto bg-black/[0.02] p-4 dark:bg-black/20">
+              <div ref={listRef} onScroll={handleScroll} className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden bg-black/[0.02] p-4 dark:bg-black/20">
                 {loadingMessages && <Loader label="Loading messages…" />}
                 {!loadingMessages && messagesError && (
                   <div className="flex h-full items-center justify-center"><EmptyState icon={FiMessageSquare} title="This conversation is no longer available" description="It may have been deleted or you may have left it." action={<Button variant="ghost" size="sm" onClick={() => { setActiveId(null); setMobilePane('list'); qc.invalidateQueries({ queryKey: QK.conversations }) }}>Back to conversations</Button>} /></div>
                 )}
                 {!loadingMessages && !messagesError && displayedMessages.length === 0 && <div className="flex h-full items-center justify-center"><EmptyState icon={FiMessageSquare} title="No messages yet" description="Say hello to start the conversation." /></div>}
                 {hasMore && displayedMessages.length >= 20 && <p className="text-center text-[11px] text-muted mb-2">Scroll to top to load older messages</p>}
-                <div className="space-y-2">
+                <div className="space-y-2 overflow-x-hidden min-w-0">
                   {displayedMessages.map((m) => (
                     <MessageBubble key={m._id} message={m} mine={String(m.sender) === String(me?._id)} meId={me?._id} participantCount={active.memberCount || 2} onReply={setReplyTo} onEdit={(msg) => { setEditing(msg); setDraft(msg.text) }} onDelete={(id, fe) => chatApi.deleteMessage(activeId, id, fe).then(() => qc.invalidateQueries({ queryKey: QK.messages(activeId) }))} onStar={(id) => chatApi.star(activeId, id).then(() => qc.invalidateQueries({ queryKey: QK.messages(activeId) }))} onReact={(id, emoji) => chatApi.react(activeId, id, emoji).then(() => qc.invalidateQueries({ queryKey: QK.messages(activeId) }))} onForward={handleForward} onInfo={handleInfo} />
                   ))}
@@ -571,15 +670,7 @@ export default function ChatPage() {
                 <div className="flex items-center gap-2 relative">
                   <input ref={fileInputRef} type="file" hidden onChange={pickFile} />
                   <Button variant="ghost" icon={FiPaperclip} disabled={uploadingAttach || !activeId} loading={uploadingAttach} onClick={() => fileInputRef.current?.click()} aria-label="Attach a file" className="!min-h-[42px] !h-[42px] shrink-0" />
-                  <div className="relative shrink-0">
-                    <button onClick={() => setShowEmoji((v) => !v)} className="rounded-lg p-2 text-muted hover:bg-black/5 h-[42px] w-[42px] flex items-center justify-center" title="Emoji"><FiSmile className="h-5 w-5" /></button>
-                    {showEmoji && (
-                      <div className="absolute bottom-full left-0 mb-2 flex flex-wrap gap-1 rounded-xl border border-app bg-surface p-2 shadow-xl z-30 max-w-[240px]">
-                        {['😀','😂','😍','🥺','😎','🤔','👍','❤️','🔥','🎉','🙏','😢','😮','🤣','😅','😇','🤩','😭','🥳','😡'].map((e) => <button key={e} onClick={() => { setDraft((d) => d + e); setShowEmoji(false) }} className="text-xl hover:scale-125 transition">{e}</button>)}
-                      </div>
-                    )}
-                  </div>
-                  <textarea rows={1} value={draft} onChange={(e) => handleTyping(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() } }} placeholder={pendingAttach ? 'Add a caption… (optional)' : 'Type a message…'} className="input !min-h-[42px] !h-[42px] max-h-24 flex-1 resize-none py-2.5 overflow-y-auto" style={{minHeight:'42px', height:'42px'}} />
+                  <textarea rows={1} value={draft} onChange={(e) => handleTyping(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() } }} placeholder={pendingAttach ? 'Add a caption… (optional)' : 'Type a message…'} className="input !min-h-[42px] !h-[42px] max-h-24 flex-1 min-w-0 resize-none py-2.5 overflow-y-auto" style={{minHeight:'42px', height:'42px'}} />
                   <Button icon={FiSend} disabled={!canSend} loading={sending} onClick={handleSend} aria-label="Send message" className="!min-h-[42px] !h-[42px] shrink-0"><span className="hidden sm:inline">{editing ? 'Update' : pendingAttach ? 'Send' : 'Send'}</span></Button>
                 </div>
               </div>

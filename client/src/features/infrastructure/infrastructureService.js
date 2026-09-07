@@ -20,3 +20,10 @@ export const hostingApi = {
   renew: (id, months = 12) => apiClient.patch(`/hosting/${id}/renew`, { months }),
   remove: (id) => apiClient.delete(`/hosting/${id}`),
 }
+
+export const registrarApi = {
+  list: () => apiClient.get('/registrars'),
+  create: (name) => apiClient.post('/registrars', { name }),
+  update: (id, name) => apiClient.put(`/registrars/${id}`, { name }),
+  remove: (id) => apiClient.delete(`/registrars/${id}`),
+}

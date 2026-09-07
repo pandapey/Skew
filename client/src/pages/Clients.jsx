@@ -14,7 +14,6 @@ const columns = [
       <div className="min-w-0"><p className="truncate font-medium">{r.company}</p><p className="truncate text-xs text-muted">{r.contactPerson}</p></div>
     </div>
   ) },
-  { key: 'industry', header: 'Industry' },
   { key: 'plan', header: 'Plan', render: (r) => <span className="chip bg-primary/10 text-primary">{r.plan}</span> },
   { key: 'projectCount', header: 'Projects', render: (r) => r.projectCount ?? 0 },
   { key: 'activeProjects', header: 'Active', render: (r) => r.activeProjects ?? 0 },
@@ -28,7 +27,7 @@ const columns = [
 
 const exportColumns = [
   { header: 'Company', accessor: 'company' }, { header: 'Contact', accessor: 'contactPerson' },
-  { header: 'Email', accessor: 'email' }, { header: 'Industry', accessor: 'industry' },
+  { header: 'Email', accessor: 'email' },
   { header: 'Plan', accessor: 'plan' }, { header: 'Status', accessor: 'status' },
 ]
 

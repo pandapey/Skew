@@ -2,7 +2,7 @@ import {
   FiHome, FiUsers, FiClock, FiCalendar, FiBriefcase,
   FiTrello, FiDollarSign, FiBell, FiFolder, FiPieChart,
   FiSettings, FiMessageSquare, FiCreditCard,
-  FiVideo, FiSpeaker, FiUser, FiCheckSquare, FiGlobe, FiZap,
+  FiVideo, FiSpeaker, FiUser, FiCheckSquare, FiGlobe, FiServer, FiZap,
 } from 'react-icons/fi'
 import { ROLES } from './index'
 
@@ -16,6 +16,10 @@ export const NAV_ITEMS = [
   { key: 'hr', label: 'HR', path: '/hr', icon: FiBriefcase,
     roles: [ROLES.ADMIN, ROLES.MANAGER] },
   { key: 'clients', label: 'Clients', path: '/clients', icon: FiGlobe,
+    roles: [ROLES.ADMIN, ROLES.MANAGER] },
+  { key: 'domains', label: 'Domains', path: '/domains', icon: FiGlobe,
+    roles: [ROLES.ADMIN, ROLES.MANAGER] },
+  { key: 'hosting', label: 'Hosting', path: '/hosting', icon: FiServer,
     roles: [ROLES.ADMIN, ROLES.MANAGER] },
   { key: 'projects', label: 'Projects', path: '/projects', icon: FiTrello, roles: A },
   { key: 'attendance', label: 'Attendance', path: '/attendance', icon: FiClock, roles: A },

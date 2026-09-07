@@ -2,10 +2,32 @@ import { Router } from 'express'
 import mongoose from 'mongoose'
 import { protect, authorize } from '../middleware/auth.js'
 import { asyncHandler, ApiError } from '../utils/asyncHandler.js'
-import { Domain, HostingPlan } from '../models/infrastructureModels.js'
+import { Domain, HostingPlan, Registrar } from '../models/infrastructureModels.js'
 import { Client } from '../models/clientModels.js'
 import { validateDomainPayload, validateHostingPayload } from '../validators/infrastructureValidators.js'
 import { escapeRegex, clampLimit, clampPage } from '../utils/query.js'
+
+const DEFAULT_REGISTRARS = ['GoDaddy', 'BigRock', 'Namecheap', 'Cloudflare', 'Google Domains', 'Hostinger', 'Name.com', 'Bluehost', 'HostGator']
+
+async function ensureDefaultRegistrars() {
+  try {
+    const count = await Registrar.countDocuments()
+    if (count === 0) {
+      await Registrar.insertMany(DEFAULT_REGISTRARS.map((name) => ({ name })), { ordered: false })
+    }
+  } catch {}
+}
+ensureDefaultRegistrars()
+
+async function ensureRegistrar(name) {
+  const clean = String(name || '').trim()
+  if (!clean) return
+  if (clean.length > 120) return
+  const exists = await Registrar.findOne({ name: { $regex: new RegExp(`^${escapeRegex(clean)}$`, 'i') } }).lean()
+  if (!exists) {
+    try { await Registrar.create({ name: clean }) } catch {}
+  }
+}
 
 const INFRA_WRITE = ['Admin', 'Manager']
 const WINDOW_DAYS = 30
@@ -176,13 +198,16 @@ domainRouter.post('/', validateDomainPayload, asyncHandler(async (req, res) => {
   const exists = await Domain.findOne({ domainName: new RegExp(`^${escapeRegex(normalized)}$`, 'i'), isDeleted: { $ne: true } }).lean()
   if (exists) throw new ApiError(409, 'This domain is already registered')
 
+  const registrarClean = registrar ? String(registrar).trim() : ''
+  if (registrarClean) await ensureRegistrar(registrarClean)
+
   const doc = await Domain.create({
     client,
     domainName: normalized,
-    registrar: registrar ? String(registrar).trim() : '',
+    registrar: registrarClean,
     registeredOn: normalizeDate(registeredOn),
     expiresOn: normalizeDate(expiresOn),
-    renewalCost: Number(renewalCost) || 0,
+    renewalCost: renewalCost != null && String(renewalCost).trim() !== '' ? Number(renewalCost) : 0,
     autoRenew: Boolean(autoRenew),
   })
   const [enriched] = await enrichDomains([doc.toObject()])
@@ -200,12 +225,15 @@ domainRouter.put('/:id', validateDomainPayload, asyncHandler(async (req, res) =>
   const dup = await Domain.findOne({ domainName: new RegExp(`^${escapeRegex(normalized)}$`, 'i'), _id: { $ne: req.params.id }, isDeleted: { $ne: true } }).lean()
   if (dup) throw new ApiError(409, 'This domain is already registered')
 
+  const registrarClean = registrar != null ? String(registrar).trim() : existing.registrar
+  if (registrarClean && registrarClean !== existing.registrar) await ensureRegistrar(registrarClean)
+
   existing.client = client
   existing.domainName = normalized
-  existing.registrar = registrar ? String(registrar).trim() : ''
+  existing.registrar = registrarClean || ''
   existing.registeredOn = normalizeDate(registeredOn)
   existing.expiresOn = normalizeDate(expiresOn)
-  existing.renewalCost = Number(renewalCost) || 0
+  if (renewalCost != null && String(renewalCost).trim() !== '') existing.renewalCost = Number(renewalCost)
   existing.autoRenew = Boolean(autoRenew)
   await existing.save()
   const [enriched] = await enrichDomains([existing.toObject()])
@@ -325,14 +353,16 @@ hostingRouter.post('/', validateHostingPayload, asyncHandler(async (req, res) =>
     if (String(d.client) !== String(client)) throw new ApiError(422, 'Linked domain must belong to the same client')
     domainId = d._id
   }
+  const providerClean = provider ? String(provider).trim() : ''
+  if (providerClean) await ensureRegistrar(providerClean)
   const doc = await HostingPlan.create({
     client,
     domain: domainId,
-    provider: provider ? String(provider).trim() : '',
+    provider: providerClean,
     planName: planName ? String(planName).trim() : '',
     startsOn: normalizeDate(startsOn),
     expiresOn: normalizeDate(expiresOn),
-    renewalCost: Number(renewalCost) || 0,
+    renewalCost: renewalCost != null && String(renewalCost).trim() !== '' ? Number(renewalCost) : 0,
   })
   const [enriched] = await enrichHosting([doc.toObject()])
   res.status(201).json(enriched)
@@ -353,13 +383,15 @@ hostingRouter.put('/:id', validateHostingPayload, asyncHandler(async (req, res) 
     if (String(d.client) !== String(client)) throw new ApiError(422, 'Linked domain must belong to the same client')
     domainId = d._id
   }
+  const providerClean = provider != null ? String(provider).trim() : existing.provider
+  if (providerClean && providerClean !== existing.provider) await ensureRegistrar(providerClean)
   existing.client = client
   existing.domain = domainId
-  existing.provider = provider ? String(provider).trim() : ''
+  existing.provider = providerClean || ''
   existing.planName = planName ? String(planName).trim() : ''
   existing.startsOn = normalizeDate(startsOn)
   existing.expiresOn = normalizeDate(expiresOn)
-  existing.renewalCost = Number(renewalCost) || 0
+  if (renewalCost != null && String(renewalCost).trim() !== '') existing.renewalCost = Number(renewalCost)
   await existing.save()
   const [enriched] = await enrichHosting([existing.toObject()])
   res.json(enriched)
@@ -388,4 +420,58 @@ hostingRouter.delete('/:id', asyncHandler(async (req, res) => {
   if (!doc) throw new ApiError(404, 'Hosting plan not found')
   await HostingPlan.deleteOne({ _id: doc._id })
   res.json({ id: String(doc._id), message: 'Hosting plan deleted' })
+}))
+
+// ---------------- REGISTRAR / PROVIDER ROUTER (shared) ----------------
+export const registrarRouter = Router()
+registrarRouter.use(protect, authorize(...INFRA_WRITE))
+
+registrarRouter.get('/', asyncHandler(async (_req, res) => {
+  await ensureDefaultRegistrars()
+  const rows = await Registrar.find().sort({ name: 1 }).lean()
+  // also merge any distinct registrar/provider values already stored in Domain/Hosting that are not in collection (for backwards compat)
+  const domainRegs = await Domain.distinct('registrar', { isDeleted: { $ne: true }, registrar: { $ne: '' } })
+  const hostingProvs = await HostingPlan.distinct('provider', { isDeleted: { $ne: true }, provider: { $ne: '' } })
+  const existingNames = new Set(rows.map((r) => String(r.name).toLowerCase()))
+  const extra = [...new Set([...domainRegs, ...hostingProvs].map((s) => String(s).trim()).filter(Boolean))].filter((n) => !existingNames.has(n.toLowerCase()))
+  if (extra.length) {
+    try {
+      await Registrar.insertMany(extra.map((name) => ({ name })), { ordered: false })
+      const refreshed = await Registrar.find().sort({ name: 1 }).lean()
+      return res.json(refreshed)
+    } catch {}
+  }
+  res.json(rows)
+}))
+
+registrarRouter.post('/', asyncHandler(async (req, res) => {
+  const name = String(req.body?.name || '').trim()
+  if (!name) throw new ApiError(422, 'Registrar name is required')
+  if (name.length > 120) throw new ApiError(422, 'Registrar name must be 120 characters or fewer')
+  const exists = await Registrar.findOne({ name: { $regex: new RegExp(`^${escapeRegex(name)}$`, 'i') } }).lean()
+  if (exists) throw new ApiError(409, 'This registrar already exists')
+  const doc = await Registrar.create({ name })
+  res.status(201).json(doc)
+}))
+
+registrarRouter.put('/:id', asyncHandler(async (req, res) => {
+  assertValidId(req.params.id, 'registrar')
+  const name = String(req.body?.name || '').trim()
+  if (!name) throw new ApiError(422, 'Registrar name is required')
+  if (name.length > 120) throw new ApiError(422, 'Registrar name must be 120 characters or fewer')
+  const existing = await Registrar.findById(req.params.id)
+  if (!existing) throw new ApiError(404, 'Registrar not found')
+  const dup = await Registrar.findOne({ name: { $regex: new RegExp(`^${escapeRegex(name)}$`, 'i') }, _id: { $ne: req.params.id } }).lean()
+  if (dup) throw new ApiError(409, 'This registrar already exists')
+  existing.name = name
+  await existing.save()
+  res.json(existing)
+}))
+
+registrarRouter.delete('/:id', asyncHandler(async (req, res) => {
+  assertValidId(req.params.id, 'registrar')
+  const doc = await Registrar.findById(req.params.id)
+  if (!doc) throw new ApiError(404, 'Registrar not found')
+  await Registrar.deleteOne({ _id: doc._id })
+  res.json({ id: String(doc._id), message: 'Registrar deleted' })
 }))

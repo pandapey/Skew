@@ -5,11 +5,11 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import toast from 'react-hot-toast'
-import { FiArrowLeft, FiServer, FiRefreshCw } from 'react-icons/fi'
+import { FiArrowLeft, FiServer, FiRefreshCw, FiPlus, FiX } from 'react-icons/fi'
 import { PageHeader, Card, Button, Input, Select, Loader, EmptyState } from '@/components/ui'
-import { hostingApi, domainApi } from '@/features/infrastructure/infrastructureService'
+import { hostingApi, domainApi, registrarApi } from '@/features/infrastructure/infrastructureService'
 import { adminApi } from '@/api/adminApi'
-import { formatMoney, countdownFor, daysUntil, WINDOW_DAYS } from '@/utils/renewal'
+import { countdownFor, daysUntil, WINDOW_DAYS } from '@/utils/renewal'
 import { formatDate } from '@/utils'
 import { useAuth } from '@/hooks/useAuth'
 import { ROLES } from '@/constants'
@@ -21,16 +21,11 @@ const schema = z.object({
   planName: z.string().optional(),
   startsOn: z.string().optional(),
   expiresOn: z.string().min(1, 'Expiry date is required'),
-  renewalCost: z.string().optional(),
 }).superRefine((val, ctx) => {
   if (val.startsOn && val.expiresOn) {
     const s = new Date(val.startsOn)
     const e = new Date(val.expiresOn)
     if (!isNaN(s) && !isNaN(e) && s > e) ctx.addIssue({ path: ['startsOn'], code: z.ZodIssueCode.custom, message: 'Start date cannot be after the expiry date' })
-  }
-  if (val.renewalCost && String(val.renewalCost).trim() !== '') {
-    const n = Number(val.renewalCost)
-    if (!Number.isFinite(n) || n < 0) ctx.addIssue({ path: ['renewalCost'], code: z.ZodIssueCode.custom, message: 'Enter a renewal cost of zero or more' })
   }
 })
 
@@ -56,6 +51,13 @@ export default function HostingForm() {
     select: (res) => (Array.isArray(res) ? res : res?.data || []),
   })
 
+  const { data: registrarRows = [] } = useQuery({
+    queryKey: ['registrars'],
+    queryFn: () => registrarApi.list(),
+    staleTime: 30_000,
+    select: (res) => (Array.isArray(res) ? res : res?.data || []),
+  })
+
   const clientOptions = useMemo(() => {
     const list = Array.isArray(clientList) ? clientList : []
     return [{ value: '', label: 'Select a client' }, ...list.map((c) => ({ value: String(c._id || c.clientId || c.id), label: c.company || String(c._id) }))]
@@ -70,7 +72,6 @@ export default function HostingForm() {
       planName: '',
       startsOn: new Date().toISOString().slice(0, 10),
       expiresOn: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
-      renewalCost: '0.00',
     },
   })
 
@@ -90,17 +91,40 @@ export default function HostingForm() {
     return [...base, ...list.map((d) => ({ value: String(d.value || d._id || d.id), label: d.label || d.domainName || String(d.value) }))]
   }, [domainLookup])
 
+  const [providerMode, setProviderMode] = useState('select')
+  const [customProvider, setCustomProvider] = useState('')
+  const [newProviderInput, setNewProviderInput] = useState('')
+  const [providerSelectValue, setProviderSelectValue] = useState('')
+
+  const providerOptions = useMemo(() => {
+    const rows = Array.isArray(registrarRows) ? registrarRows : []
+    const names = rows.map((r) => r.name || r.label || String(r)).filter(Boolean)
+    if (existing?.provider && !names.some((n) => n.toLowerCase() === String(existing.provider).toLowerCase())) {
+      names.unshift(existing.provider)
+    }
+    const base = [{ value: '', label: 'Select a provider' }, ...names.map((n) => ({ value: n, label: n }))]
+    return [...base, { value: '__update', label: 'Update Registrar' }, { value: '__other', label: 'Other' }]
+  }, [registrarRows, existing?.provider])
+
   useEffect(() => {
     if (!existing) return
+    const prov = existing.provider || ''
     form.reset({
       client: String(existing.client || ''),
       domain: existing.domain ? String(existing.domain) : '',
-      provider: existing.provider || '',
+      provider: prov,
       planName: existing.planName || '',
       startsOn: existing.startsOn ? new Date(existing.startsOn).toISOString().slice(0, 10) : '',
       expiresOn: existing.expiresOn ? new Date(existing.expiresOn).toISOString().slice(0, 10) : '',
-      renewalCost: existing.renewalCost != null ? String(Number(existing.renewalCost).toFixed(2)) : '0.00',
     })
+    if (prov) {
+      setProviderSelectValue(prov)
+      setProviderMode('select')
+    } else {
+      setProviderSelectValue('')
+      setProviderMode('select')
+    }
+    setCustomProvider('')
   }, [existing?._id, existing?.id])
 
   // for new: respect ?clientId
@@ -111,15 +135,38 @@ export default function HostingForm() {
     if (cid) form.setValue('client', cid)
   }, [isEdit])
 
-  // when client changes for new, reset domain if not in list
-  useEffect(() => {
-    if (isEdit) return
-    // clear domain when client changes unless domain belongs to new client (will be re-validated on submit)
-    // We keep current domain value but if it's not in options we keep "" — user must re-select
-    // To avoid stale domain across clients, clear when client changes and current domain not empty
-    // Actually we let user see empty options until they re-select; simplest: set domain to '' on client change for new
-    // But avoid clearing on initial load; use a ref
-  }, [])
+  const addProviderMutation = useMutation({
+    mutationFn: (name) => registrarApi.create(name),
+    onSuccess: (res) => {
+      const name = res?.name || newProviderInput.trim()
+      toast.success(`Provider "${name}" added`)
+      qc.invalidateQueries({ queryKey: ['registrars'] })
+      setNewProviderInput('')
+      setProviderMode('select')
+      setProviderSelectValue(name)
+      form.setValue('provider', name)
+    },
+    onError: (err) => toast.error(err?.response?.data?.message || 'Could not add provider'),
+  })
+
+  const handleProviderSelect = (e) => {
+    const v = e.target.value
+    if (v === '__update') {
+      setProviderMode('update')
+      setProviderSelectValue('__update')
+      return
+    }
+    if (v === '__other') {
+      setProviderMode('other')
+      setProviderSelectValue('__other')
+      setCustomProvider('')
+      form.setValue('provider', '')
+      return
+    }
+    setProviderMode('select')
+    setProviderSelectValue(v)
+    form.setValue('provider', v)
+  }
 
   const handleClientChange = (e) => {
     const v = e.target.value
@@ -129,20 +176,25 @@ export default function HostingForm() {
 
   const saveMutation = useMutation({
     mutationFn: (values) => {
+      let effectiveProvider = values.provider || providerSelectValue || ''
+      if (providerMode === 'other') {
+        effectiveProvider = String(customProvider || '').trim()
+      }
+      if (effectiveProvider === '__update' || effectiveProvider === '__other') effectiveProvider = ''
       const payload = {
         client: values.client,
         domain: values.domain || null,
-        provider: String(values.provider || '').trim(),
+        provider: String(effectiveProvider || '').trim(),
         planName: String(values.planName || '').trim(),
         startsOn: values.startsOn || null,
         expiresOn: values.expiresOn,
-        renewalCost: values.renewalCost ? Number(values.renewalCost) : 0,
       }
       return isEdit ? hostingApi.update(id, payload) : hostingApi.create(payload)
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['hosting'] })
       qc.invalidateQueries({ queryKey: ['hosting-summary'] })
+      qc.invalidateQueries({ queryKey: ['registrars'] })
       if (isEdit) qc.invalidateQueries({ queryKey: ['hosting', id] })
       toast.success(isEdit ? 'Hosting updated' : 'Hosting added')
       navigate('/hosting?saved=1')
@@ -187,7 +239,7 @@ export default function HostingForm() {
   const showHint = isEdit && days != null && days <= WINDOW_DAYS
   const hintText = isEdit && days != null ? (days < 0 ? `This plan expired ${countdownFor(existing.expiresOn)}. Renew it to keep the site online.` : `This plan expires ${countdownFor(existing.expiresOn)}.`) : ''
   const heading = isEdit ? (existing?.planName || existing?.provider || 'Hosting plan') : 'Add hosting plan'
-  const audit = isEdit && existing ? `Renewal cost ${formatMoney(existing.renewalCost)} · ${existing.domainName ? existing.domainName : 'No domain linked'}` : 'Not saved yet'
+  const audit = isEdit && existing ? `${existing.domainName ? existing.domainName : 'No domain linked'}` : 'Not saved yet'
 
   return (
     <div>
@@ -219,11 +271,28 @@ export default function HostingForm() {
           <div>
             <h4 className="mb-3 text-sm font-semibold text-muted">Plan</h4>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <Input label="Provider" placeholder="Hostinger, AWS, DigitalOcean..." {...form.register('provider')} />
+              <div>
+                <Select label="Provider" value={providerMode === 'other' || providerMode === 'update' ? providerSelectValue : (form.watch('provider') || providerSelectValue)} onChange={handleProviderSelect} options={providerOptions} searchable placeholder="Select a provider" />
+                {providerMode === 'other' && (
+                  <div className="mt-2">
+                    <Input label="Provider Name *" placeholder="Enter provider name" value={customProvider} onChange={(e) => setCustomProvider(e.target.value)} />
+                    <p className="mt-1 text-xs text-muted">This provider will be saved for this hosting plan and added to the shared list if new.</p>
+                  </div>
+                )}
+                {providerMode === 'update' && (
+                  <div className="mt-2 rounded-xl border border-app bg-black/[0.02] p-3 dark:bg-white/[0.04]">
+                    <p className="mb-2 text-xs font-semibold text-muted">Add or update provider for future hosting</p>
+                    <div className="flex items-center gap-2">
+                      <input value={newProviderInput} onChange={(e) => setNewProviderInput(e.target.value)} placeholder="New provider name" className="input flex-1" />
+                      <Button type="button" size="sm" icon={FiPlus} loading={addProviderMutation.isPending} disabled={!newProviderInput.trim()} onClick={() => addProviderMutation.mutate(newProviderInput.trim())}>Add</Button>
+                      <Button type="button" size="sm" variant="ghost" icon={FiX} onClick={() => { setProviderMode('select'); setProviderSelectValue(form.watch('provider') || ''); setNewProviderInput('') }}>Cancel</Button>
+                    </div>
+                  </div>
+                )}
+              </div>
               <Input label="Plan name" placeholder="Business shared, 4 GB VPS..." {...form.register('planName')} />
               <Input label="Starts on" type="date" {...form.register('startsOn')} error={form.formState.errors.startsOn?.message} />
               <Input label="Expires on *" type="date" {...form.register('expiresOn')} error={form.formState.errors.expiresOn?.message} />
-              <Input label="Renewal cost" placeholder="0.00" {...form.register('renewalCost')} error={form.formState.errors.renewalCost?.message} />
             </div>
           </div>
 

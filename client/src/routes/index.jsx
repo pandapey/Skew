@@ -8,7 +8,6 @@ import { Loader } from '@/components/ui'
 import { ROLES, STAFF_ROLES } from '@/constants'
 import { ClientLayout } from '@/layouts/ClientLayout'
 
-// Lazy-loaded pages → code splitting per route.
 const Login = lazy(() => import('@/pages/auth/Login'))
 const Dashboard = lazy(() => import('@/pages/Dashboard'))
 const Employees = lazy(() => import('@/pages/Employees'))
@@ -97,12 +96,15 @@ const AdminClientDetail = lazy(() => import('@/pages/admin/ClientDetail'))
 const ClientsModule = lazy(() => import('@/pages/Clients'))
 
 const ClientForm = lazy(() => import('@/pages/clients/ClientForm'))
+const Domains = lazy(() => import('@/pages/Domains'))
+const DomainForm = lazy(() => import('@/pages/domains/DomainForm'))
+const Hosting = lazy(() => import('@/pages/Hosting'))
+const HostingForm = lazy(() => import('@/pages/hosting/HostingForm'))
 
 import { NotFound, Forbidden, ServerError } from '@/pages/error/ErrorPage'
 
 import { RouteError } from './RouteError'
 
-// Wrap lazy element in Suspense fallback.
 const s = (El) => (
   <Suspense fallback={<Loader />}>
     <El />
@@ -114,7 +116,6 @@ const route = (path, El, roles = STAFF_ROLES) => ({
   element: <ProtectedRoute roles={roles}>{s(El)}</ProtectedRoute>,
 })
 
-// Role-aware home: clients land in their portal, staff in the dashboard.
 function RoleHome() {
   const { user } = useAuth()
   return <Navigate to={user?.role === ROLES.CLIENT ? '/client' : '/dashboard'} replace />
@@ -163,12 +164,17 @@ export const router = createBrowserRouter([
       route('/clients/new', ClientForm, [ROLES.ADMIN, ROLES.MANAGER]),
       route('/clients/:id/edit', ClientForm, [ROLES.ADMIN, ROLES.MANAGER]),
       route('/clients/:id', AdminClientDetail, [ROLES.ADMIN, ROLES.MANAGER]),
+      route('/domains', Domains, [ROLES.ADMIN, ROLES.MANAGER]),
+      route('/domains/new', DomainForm, [ROLES.ADMIN, ROLES.MANAGER]),
+      route('/domains/:id/edit', DomainForm, [ROLES.ADMIN, ROLES.MANAGER]),
+      route('/hosting', Hosting, [ROLES.ADMIN, ROLES.MANAGER]),
+      route('/hosting/new', HostingForm, [ROLES.ADMIN, ROLES.MANAGER]),
+      route('/hosting/:id/edit', HostingForm, [ROLES.ADMIN, ROLES.MANAGER]),
       route('/attendance', Attendance),
       route('/attendance/reports', AttendanceReports, [ROLES.ADMIN, ROLES.MANAGER]),
       route('/attendance/shifts', AttendanceShifts, [ROLES.ADMIN, ROLES.MANAGER]),
       route('/attendance/holidays', AttendanceHolidays, [ROLES.ADMIN, ROLES.MANAGER]),
-      // Leave lives under Attendance so its breadcrumb reads Attendance > Leave;
-      // the legacy /leave path redirects there.
+
       route('/attendance/leave', Leave),
       { path: '/leave', element: <Navigate to="/attendance/leave" replace /> },
       route('/leave/reports', LeaveReports, [ROLES.ADMIN, ROLES.MANAGER]),
@@ -186,17 +192,16 @@ export const router = createBrowserRouter([
       route('/projects/reviews', TaskReview),
       route('/projects/:id', ProjectDetail),
       route('/my-tasks', MyTasks, [ROLES.EMPLOYEE]),
-      // Employee-facing review queue and history live under My Tasks so the
-      // breadcrumb reads My Tasks > Task Review / My Tasks > Task History.
+
       route('/my-tasks/review', TaskReview, [ROLES.EMPLOYEE]),
       route('/my-tasks/history', TaskHistory),
       { path: '/task-history', element: <Navigate to="/my-tasks/history" replace /> },
-      // Salary lives under My Profile so its breadcrumb reads My Profile > Salary.
+
       route('/profile/salary', MySalary, STAFF_ROLES),
       { path: '/salary', element: <Navigate to="/profile/salary" replace /> },
       route('/salary/history', SalaryHistory, STAFF_ROLES),
       route('/salary/report', SalaryReport, STAFF_ROLES),
-      // --- Finance module (hub + sub-pages) ---
+
       route('/finance', FinanceDashboard, [ROLES.ADMIN, ROLES.MANAGER]),
       route('/finance/income', FinanceIncome, [ROLES.ADMIN, ROLES.MANAGER]),
       route('/finance/expenses', FinanceExpenses, [ROLES.ADMIN, ROLES.MANAGER]),
@@ -216,7 +221,7 @@ export const router = createBrowserRouter([
       route('/notifications', Notifications),
       route('/chat', Chat),
       route('/reports', Reports, [ROLES.ADMIN, ROLES.MANAGER]),
-      // --- Admin console (hub + sub-pages) ---
+
       {
         path: '/admin',
         element: (
@@ -242,7 +247,7 @@ export const router = createBrowserRouter([
       route('/search', Search),
     ],
   },
-  // --- Client Portal: SEPARATE tree, gated exclusively to the Client role ---
+
   {
     element: (
       <ProtectedRoute roles={[ROLES.CLIENT]}>

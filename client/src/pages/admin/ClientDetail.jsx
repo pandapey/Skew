@@ -81,7 +81,7 @@ export default function ClientDetail() {
         <Card>
           <CardHeader title="Company Profile" />
           <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
-            {[['Contact', client.contactPerson], ['Designation', client.designation], ['Email', client.email], ['Phone', client.phone], ['Industry', client.industry], ['GST', client.gst], ['Plan', client.plan], ['Joined', fmtDate(client.joinedDate)], ['Address', client.address], ['Website', client.website]].map(([k, v]) => (
+            {[['Contact', client.contactPerson], ['Designation', client.designation], ['Email', client.email], ['Phone', client.phone], ['GST', client.gst], ['Plan', client.plan], ['Joined', fmtDate(client.joinedDate)], ['Address', client.address], ['Website', client.website]].map(([k, v]) => (
               <div key={k}><p className="text-xs text-muted">{k}</p><p className="font-medium">{v || '—'}</p></div>
             ))}
           </div>
@@ -148,7 +148,7 @@ export default function ClientDetail() {
                   const inv = document.getElementById(`inv-${p.projectId}`).value || `INV-${Date.now()}`
                   const amt = Number(document.getElementById(`amt-${p.projectId}`).value) || 0
                   if (amt <= 0) return toast.error('Enter an amount')
-                  genInvoice.mutate({ pid: p.projectId, inv: { invoice: inv, amount: amt, paid: 0, status: 'Pending', date: new Date().toISOString().slice(0, 10), method: 'Bank Transfer' } })
+                  genInvoice.mutate({ pid: p.projectId, inv: { invoice: inv, amount: amt, paid: 0, status: 'Pending', date: new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }), method: 'Bank Transfer' } })
                 }}>Generate Invoice</Button>
               </div>
               <div className="space-y-2">
@@ -205,7 +205,7 @@ export default function ClientDetail() {
               <Button icon={FiSend} onClick={() => {
                 const title = document.getElementById('ann-title').value
                 if (!title) return toast.error('Enter a title')
-                publish.mutate({ title, body: document.getElementById('ann-body').value, tag: document.getElementById('ann-tag').value, pinned: false, date: new Date().toISOString().slice(0, 10) })
+                publish.mutate({ title, body: document.getElementById('ann-body').value, tag: document.getElementById('ann-tag').value, pinned: false, date: new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }) })
               }}>Publish</Button>
             </div>
           </div>

@@ -40,7 +40,7 @@ const conversationSchema = new Schema(
     participants: { type: [participantSchema], default: [] },
     admins: { type: [{ type: Schema.Types.ObjectId, ref: 'User' }], default: [] },
     lastMessage: { type: lastMessageSchema, default: () => ({}) },
-    inviteCode: { type: String, default: null, index: true },
+    inviteCode: { type: String, default: null },
     inviteEnabled: { type: Boolean, default: true },
     settings: {
       onlyAdminsCanSend: { type: Boolean, default: false },
@@ -51,7 +51,7 @@ const conversationSchema = new Schema(
   opts
 )
 conversationSchema.index({ 'participants.user': 1, updatedAt: -1 })
-conversationSchema.index({ inviteCode: 1 }, { sparse: true })
+conversationSchema.index({ inviteCode: 1 }, { unique: true, sparse: true })
 
 const messageSchema = new Schema(
   {
@@ -88,7 +88,7 @@ const messageSchema = new Schema(
     reactions: { type: [{ user: { type: Schema.Types.ObjectId, ref: 'User' }, emoji: String, at: { type: Date, default: Date.now } }], default: [] },
     deliveredTo: { type: [{ user: { type: Schema.Types.ObjectId, ref: 'User' }, at: Date }], default: [] },
     readBy: { type: [{ user: { type: Schema.Types.ObjectId, ref: 'User' }, at: Date }], default: [] },
-    expiresAt: { type: Date, default: null, index: true },
+    expiresAt: { type: Date, default: null },
     location: {
       latitude: Number,
       longitude: Number,

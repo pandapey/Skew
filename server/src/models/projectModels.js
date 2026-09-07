@@ -109,7 +109,7 @@ const taskHistorySchema = new Schema({
 }, { _id: true })
 
 const taskSchema = new Schema({
-  project: { type: Schema.Types.ObjectId, ref: 'Project', required: true, index: true },
+  project: { type: Schema.Types.ObjectId, ref: 'Project', default: null, index: true },
   sprint: { type: Schema.Types.ObjectId, ref: 'Sprint', default: null, index: true },
   title: { type: String, required: true, index: true },
   description: String,

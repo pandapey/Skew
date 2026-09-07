@@ -80,6 +80,16 @@ async function isBlocked(a, b) {
   return !!found
 }
 
+async function generateUniqueInviteCode() {
+  for (let i = 0; i < 5; i++) {
+    const code = crypto.randomBytes(4).toString('hex')
+    const exists = await Conversation.exists({ inviteCode: code })
+    if (!exists) return code
+  }
+  // fallback longer
+  return crypto.randomBytes(6).toString('hex')
+}
+
 async function unreadCount(conversationId, userId) {
   return Message.countDocuments({
     conversation: conversationId,
@@ -87,7 +97,7 @@ async function unreadCount(conversationId, userId) {
     'readBy.user': { $ne: userId },
     isDeleted: { $ne: true },
     isDeletedForEveryone: { $ne: true },
-    deletedFor: { $ne: userId },
+    deletedFor: { $nin: [userId] },
   })
 }
 
@@ -177,7 +187,9 @@ export async function listConversations(userId) {
   views.sort((a, b) => {
     if (a.isPinned && !b.isPinned) return -1
     if (!a.isPinned && b.isPinned) return 1
-    return new Date(b.updatedAt) - new Date(a.updatedAt)
+    const atA = a.lastMessage?.at || a.updatedAt
+    const atB = b.lastMessage?.at || b.updatedAt
+    return new Date(atB) - new Date(atA)
   })
   return views
 }
@@ -201,7 +213,7 @@ export async function totalUnreadCount(userId) {
     sender: { $ne: userId },
     'readBy.user': { $ne: userId },
     isDeleted: { $ne: true },
-    deletedFor: { $ne: userId },
+    deletedFor: { $nin: [userId] },
   })
   return { count }
 }
@@ -284,6 +296,7 @@ export async function createGroup(userId, { name, memberIds = [], description, i
     members.push(u)
   }
 
+  const inviteCode = await generateUniqueInviteCode()
   const conversation = await Conversation.create({
     type: 'group',
     name: cleanName,
@@ -295,7 +308,7 @@ export async function createGroup(userId, { name, memberIds = [], description, i
       { user: me._id, role: me.role, groupRole: 'admin', addedBy: me._id },
       ...members.map((m) => ({ user: m._id, role: m.role, groupRole: 'member', addedBy: me._id })),
     ],
-    inviteCode: crypto.randomBytes(4).toString('hex'),
+    inviteCode,
   })
   const ids = [me._id, ...members.map((m) => m._id)]
   await emitToUsers(ids, 'chat:conversation', { conversationId: String(conversation._id) })
@@ -370,7 +383,7 @@ export async function generateInviteCode(userId, conversationId) {
   if (!conv) throw new ApiError(404, 'Conversation not found')
   assertParticipant(conv, userId)
   if (!canManageGroup(conv, me)) throw new ApiError(403, 'Only admins can generate invite')
-  const code = crypto.randomBytes(4).toString('hex')
+  const code = await generateUniqueInviteCode()
   await Conversation.updateOne({ _id: conv._id }, { $set: { inviteCode: code, inviteEnabled: true } })
   return { inviteCode: code, link: `/chat/join/${code}` }
 }
@@ -399,8 +412,6 @@ export async function setConversationPref(userId, conversationId, { isMuted, mut
   if (isArchived !== undefined) set['participants.$[elem].isArchived'] = !!isArchived
   if (isCleared) {
     set['participants.$[elem].lastClearedAt'] = new Date()
-    // also clear global lastMessage preview so left side shows "No messages yet" for all (requested)
-    await Conversation.updateOne({ _id: conv._id }, { $set: { lastMessage: {} } })
   }
   if (Object.keys(set).length) {
     await Conversation.updateOne({ _id: conv._id }, { $set: set }, { arrayFilters: [{ 'elem.user': userId }] })
@@ -419,7 +430,7 @@ export async function listMessages(userId, conversationId, { before, limit, sear
   const part = (conversation.participants || []).find((p) => String(p.user) === String(userId))
   const lastClearedAt = part?.lastClearedAt ? new Date(part.lastClearedAt) : null
 
-  const query = { conversation: conversation._id, deletedFor: { $ne: userId } }
+  const query = { conversation: conversation._id, deletedFor: { $nin: [userId] } }
   if (lastClearedAt) query.createdAt = { $gte: lastClearedAt }
   if (before) {
     assertObjectId(before, 'before id')
@@ -491,7 +502,7 @@ export async function searchMessages(userId, conversationId, q) {
 export async function getStarredMessages(userId, conversationId) {
   const conversation = await loadConversation(conversationId)
   assertParticipant(conversation, userId)
-  const messages = await Message.find({ conversation: conversation._id, starredBy: userId, deletedFor: { $ne: userId } }).sort({ _id: -1 }).limit(100).lean()
+  const messages = await Message.find({ conversation: conversation._id, starredBy: userId, deletedFor: { $nin: [userId] } }).sort({ _id: -1 }).limit(100).lean()
   const senderIds = new Set(messages.map((m) => String(m.sender)))
   const senders = await User.find({ _id: { $in: [...senderIds] } }).select('name avatar').lean()
   const senderById = new Map(senders.map((u) => [String(u._id), u]))
@@ -508,7 +519,7 @@ export async function getStarredMessages(userId, conversationId) {
 export async function getMediaMessages(userId, conversationId, kind) {
   const conversation = await loadConversation(conversationId)
   assertParticipant(conversation, userId)
-  const filter = { conversation: conversation._id, deletedFor: { $ne: userId }, isDeletedForEveryone: { $ne: true } }
+  const filter = { conversation: conversation._id, deletedFor: { $nin: [userId] }, isDeletedForEveryone: { $ne: true } }
   if (kind) filter['attachment.kind'] = kind
   else filter['attachment.fileId'] = { $ne: null }
   const messages = await Message.find(filter).sort({ _id: -1 }).limit(100).lean()
@@ -541,7 +552,7 @@ export async function sendMessage(userId, conversationId, { text, attachment, re
   let replySnap = null
   if (replyTo) {
     assertObjectId(replyTo, 'reply id')
-    const orig = await Message.findOne({ _id: replyTo, conversation: conversation._id, deletedFor: { $ne: userId } }).lean()
+    const orig = await Message.findOne({ _id: replyTo, conversation: conversation._id, deletedFor: { $nin: [userId] } }).lean()
     if (!orig) throw new ApiError(404, 'Replied message not found')
     if (orig.isDeletedForEveryone) throw new ApiError(400, 'Cannot reply to a deleted message')
     const senderUser = await User.findById(orig.sender).select('name').lean()
@@ -589,6 +600,7 @@ export async function sendMessage(userId, conversationId, { text, attachment, re
           at: new Date(),
           hasAttachment: hasAttachment || hasLocation || hasContact || hasPoll,
         },
+        updatedAt: new Date(),
       },
     }
   )
@@ -882,29 +894,25 @@ export async function getChatAttachment(userId, conversationId, fileId) {
     conversation: conversation._id,
     'attachment.fileId': fileId,
   })
-    .select('_id attachment')
+    .select('sender attachment isDeleted isDeletedForEveryone deletedFor')
     .lean()
-  // allow download even before message linked if uploader is participant? strict as before but also handle viewOnce
   const item = await FileItem.findById(fileId).lean()
   if (!item || item.source === 'files') throw new ApiError(404, 'Attachment not found')
-  if (message && message.attachment?.viewOnce) {
-    const already = (message.attachment.viewedBy || []).some((v) => String(v.user) === String(userId))
-    // need to fetch full msg to check viewedBy? we have lean without viewedBy; re-check
-    const fullMsg = await Message.findOne({ conversation: conversation._id, 'attachment.fileId': fileId }).select('attachment.viewedBy attachment.viewOnce').lean()
-    if (fullMsg?.attachment?.viewOnce && (fullMsg.attachment.viewedBy || []).some((v) => String(v.user) === String(userId) && String(v.user) !== String(message._id))) {
-      // if already viewed, block second view for viewOnce
-    }
-  }
-
   if (!message) {
-    // orphan upload (pending send) — allow owner participant to download?
-    // strict: must be bound to message; but for viewOnce etc we already handle
     throw new ApiError(404, 'Attachment not found')
   }
+  if (message.isDeletedForEveryone || message.isDeleted) throw new ApiError(404, 'Attachment not found')
+  if ((message.deletedFor || []).some((id) => String(id) === String(userId))) throw new ApiError(404, 'Attachment not found')
 
-  // viewOnce handling: mark viewed
-  if (message.attachment?.viewOnce || item.name?.includes('viewOnce')) {
-    // alternative: use Message's attachment.viewOnce
+  const isViewOnce = !!message.attachment?.viewOnce
+  const isSender = String(message.sender) === String(userId)
+  if (isViewOnce && !isSender) {
+    const alreadyViewed = (message.attachment.viewedBy || []).some((v) => String(v.user) === String(userId))
+    if (alreadyViewed) throw new ApiError(410, 'This view-once photo/video has already been viewed and expired')
+    await Message.updateOne(
+      { conversation: conversation._id, 'attachment.fileId': fileId, 'attachment.viewedBy.user': { $ne: userId } },
+      { $push: { 'attachment.viewedBy': { user: userId, at: new Date() } } }
+    )
   }
 
   const isDrive = item.url && !String(item.url).startsWith('/')
@@ -913,10 +921,6 @@ export async function getChatAttachment(userId, conversationId, fileId) {
   }
   const diskName = String(item.url || '').replace(/^\/chat-uploads\//, '')
   if (!diskName || /[/\\]/.test(diskName)) throw new ApiError(400, 'Invalid file path')
-  // handle viewOnce mark
-  if (message.attachment?.viewOnce) {
-    await Message.updateOne({ conversation: conversation._id, 'attachment.fileId': fileId, 'attachment.viewedBy.user': { $ne: userId } }, { $push: { 'attachment.viewedBy': { user: userId, at: new Date() } } })
-  }
   return { absPath: `chat-uploads/${diskName}`, name: item.originalName || item.name, isDrive: false }
 }
 

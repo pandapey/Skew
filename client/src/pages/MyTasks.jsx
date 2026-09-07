@@ -37,8 +37,6 @@ export function formatDuration(sec) {
   return `${r}s`
 }
 
-// Live active-time display: wall time since start minus paused spans, refreshed
-// every second — the same math the server records at submit time.
 function RunningTimer({ task }) {
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
@@ -58,7 +56,6 @@ function RunningTimer({ task }) {
   )
 }
 
-// Working-time cell — ticks each second while running, frozen once completed.
 function WorkingTimeCell({ task }) {
   const live = isTaskRunning(task) || isTaskPaused(task)
   const [now, setNow] = useState(() => Date.now())
@@ -103,7 +100,6 @@ const makeFileForm = (file) => {
   return fd
 }
 
-// Current value for the status dropdown, derived from server state.
 function statusValue(task) {
   if (task.submissionStatus === 'Approved' || task.status === 'Done') return 'complete'
   if (isTaskPaused(task)) return 'hold'
@@ -136,9 +132,6 @@ export default function MyTasks() {
   const [commentsTaskId, setCommentsTaskId] = useState(null)
   const qc = useQueryClient()
 
-  // PHASE: EMPLOYEE TASK — tasks the signed-in user assigned (server filter
-  // `assignedBy`) are merged INTO the same list as the ones assigned to them:
-  // one page, no tabs.
   const { data: assignedByMe = [], isLoading: byMeLoading } = useQuery({
     queryKey: ['tasks', 'assigned-by', user?._id],
     queryFn: () => projectApi.tasks({ assignedBy: user?.name }),
@@ -150,17 +143,6 @@ export default function MyTasks() {
   }, [tasks, assignedByMe])
   const loading = isLoading || byMeLoading
 
-  // PHASE: EMPLOYEE MY TASK (REQUIREMENT 2) ROOT CAUSE FIX — Start/Pause/Resume
-  // appeared to do nothing until a manual browser refresh.
-  //
-  // TRACE: the modal states held a TASK OBJECT SNAPSHOT taken when the modal
-  // was opened. The mutations succeeded and invalidated the ['tasks', ...]
-  // caches, so the list refetched — but the modal kept rendering its stale
-  // snapshot object, whose `startedAt` was still null.
-  //
-  // FIX: the modals now store only the task ID and DERIVE the live task from
-  // the fresh React Query data. The moment a status mutation resolves, the
-  // derived task reflects the server state and the UI repaints with no refresh.
   const liveTask = (id) => (id ? data.find((t) => t.id === id) || null : null)
   const commentsTask = liveTask(commentsTaskId)
 
@@ -201,8 +183,6 @@ export default function MyTasks() {
     onError: (err) => toast.error(err?.response?.data?.message || 'Could not assign this task'),
   })
 
-  // PHASE: EMPLOYEE TASK STATUS — one mutation behind the details-modal status
-  // dropdown (start / pending / hold / complete). The server owns the timer.
   const statusMut = useMutation({
     mutationFn: ({ id, status }) => projectApi.setTaskStatus(id, status),
     onSuccess: (updated, { status }) => {
@@ -214,9 +194,6 @@ export default function MyTasks() {
     onError: (err) => toast.error(err?.response?.data?.message || 'Could not update the task status'),
   })
 
-  // PHASE: EMPLOYEE TASK READ STATE — opening a task's details marks it read
-  // (assignee-only, server-persisted). Only fires for the assignee's own
-  // unread tasks in the "Assigned to Me" tab.
   const markViewedMut = useMutation({
     mutationFn: (id) => projectApi.markTaskViewed(id),
     onSuccess: (updated) => {
@@ -232,7 +209,10 @@ export default function MyTasks() {
     if (t && !t.viewed && t.assignee === user?.name) markViewedMut.mutate(id)
   }
 
-  const projectName = (t) => projectMap[t.project] || t.projectName || '\u2014'
+  const projectName = (t) => {
+    if (!t.project) return 'No Project'
+    return projectMap[t.project] || t.projectName || 'No Project'
+  }
 
   const counts = useMemo(() => ({
     all: data.length,
@@ -244,7 +224,11 @@ export default function MyTasks() {
     const q = search.trim().toLowerCase()
     let out = data
       .filter((t) => matchesBucket(t, bucket))
-      .filter((t) => (projectFilter ? t.project === projectFilter : true))
+      .filter((t) => {
+        if (!projectFilter) return true
+        if (projectFilter === 'general') return !t.project
+        return t.project === projectFilter
+      })
       .filter((t) => (q ? (`${t.title} ${projectName(t)}`.toLowerCase().includes(q)) : true))
     const dir = sort.order === 'asc' ? 1 : -1
     out = [...out].sort((a, b) => {
@@ -271,7 +255,7 @@ export default function MyTasks() {
         )}
       </div>
     ) },
-    { key: 'project', header: 'Project', sortable: true, render: (t) => <span className="text-muted">{projectName(t)}</span> },
+    { key: 'project', header: 'Project', sortable: true, render: (t) => <span className={t.project ? 'text-muted' : 'text-muted italic'}>{projectName(t)}</span> },
     { key: 'createdAt', header: 'Assigned Date', sortable: true, render: (t) => formatDate(t.createdAt) },
     { key: 'startedAt', header: 'Started', sortable: true, render: (t) => formatDateTime(t.startedAt) },
     { key: 'durationSec', header: 'Working Time', render: (t) => <WorkingTimeCell task={t} /> },
@@ -332,7 +316,7 @@ export default function MyTasks() {
             label="Project"
             value={projectFilter}
             onChange={(e) => setProjectFilter(e.target.value)}
-            options={[{ value: '', label: 'All projects' }, ...projects.map((p) => ({ value: p.id, label: p.name }))]}
+            options={[{ value: '', label: 'All projects' }, { value: 'general', label: 'No Project / General Tasks' }, ...projects.map((p) => ({ value: p.id, label: p.name }))]}
             className="w-full sm:w-56"
           />
         </div>
@@ -374,10 +358,6 @@ export default function MyTasks() {
   )
 }
 
-// PHASE: EMPLOYEE TASK DETAILS — the details modal shows only the essentials
-// (title, description, time) and drives the status through a single dropdown:
-// Start / Pending / Hold / Complete. Submission/review/progress widgets are
-// removed from this surface.
 function TaskDetailsModal({ task, onClose, onStatus, busy }) {
   const running = isTaskRunning(task)
   const paused = isTaskPaused(task)

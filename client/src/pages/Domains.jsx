@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
-import { FiGlobe, FiPlus, FiRefreshCw, FiEdit2, FiTrash2, FiSearch } from 'react-icons/fi'
+import { FiGlobe, FiPlus, FiRefreshCw, FiEdit2, FiTrash2, FiSearch, FiServer } from 'react-icons/fi'
 import { PageHeader, Card, Button, DataTable, Pagination, SearchInput, Select, Badge, StatCard, ConfirmDialog } from '@/components/ui'
 import { useDebounce } from '@/hooks/useDebounce'
 import { domainApi } from '@/features/infrastructure/infrastructureService'
@@ -11,6 +11,7 @@ import { formatMoney, daysUntil, toneFor, labelFor, countdownFor } from '@/utils
 import { formatDate } from '@/utils'
 import { useAuth } from '@/hooks/useAuth'
 import { ROLES } from '@/constants'
+import Hosting from './Hosting'
 
 const INFRA_WRITE_ROLES = [ROLES.ADMIN, ROLES.MANAGER]
 
@@ -19,6 +20,8 @@ export default function Domains() {
   const navigate = useNavigate()
   const { hasRole } = useAuth()
   const canWrite = hasRole(INFRA_WRITE_ROLES)
+
+  const [activeTab, setActiveTab] = useState('domains')
 
   const [params, setParams] = useState({ search: '', status: '', client: '', page: 1, limit: 10 })
   const debounced = useDebounce(params.search, 300)
@@ -164,10 +167,36 @@ export default function Domains() {
       <PageHeader
         title="Domains"
         subtitle="Every client domain you manage, soonest renewal first."
-        actions={canWrite ? <Button icon={FiPlus} onClick={() => navigate('/domains/new')}>Add domain</Button> : null}
+        actions={
+          <div className="flex items-center gap-2">
+            {canWrite ? <Button icon={FiPlus} onClick={() => navigate('/domains/new')}>Add domain</Button> : null}
+            <Button variant={activeTab === 'hosting' ? 'primary' : 'ghost'} icon={FiServer} onClick={() => setActiveTab(activeTab === 'hosting' ? 'domains' : 'hosting')}>
+              {activeTab === 'hosting' ? 'Domains' : 'Hosting'}
+            </Button>
+          </div>
+        }
         icon={FiGlobe}
       />
 
+      <div className="mb-4 flex gap-2">
+        <button
+          onClick={() => setActiveTab('domains')}
+          className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition ${activeTab === 'domains' ? 'bg-primary text-white shadow-glow-primary' : 'bg-black/5 text-muted hover:bg-black/10 dark:bg-white/5 dark:hover:bg-white/10'}`}
+        >
+          <FiGlobe className="h-4 w-4" /> Domains
+        </button>
+        <button
+          onClick={() => setActiveTab('hosting')}
+          className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition ${activeTab === 'hosting' ? 'bg-primary text-white shadow-glow-primary' : 'bg-black/5 text-muted hover:bg-black/10 dark:bg-white/5 dark:hover:bg-white/10'}`}
+        >
+          <FiServer className="h-4 w-4" /> Hosting
+        </button>
+      </div>
+
+      {activeTab === 'hosting' ? (
+        <Hosting />
+      ) : (
+        <>
       <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard label="Domains managed" value={summaryData.total} tone="primary" icon={FiGlobe} />
         <StatCard label="Expiring in 30 days" value={summaryData.expiringSoon} tone="warning" icon={FiGlobe} />
@@ -217,6 +246,8 @@ export default function Domains() {
         confirmLabel="Delete"
         loading={deleteMutation.isPending}
       />
+        </>
+      )}
     </div>
   )
 }

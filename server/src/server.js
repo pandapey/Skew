@@ -32,7 +32,7 @@ import adminRoutes, { adminClientRouter } from './routes/adminRoutes.js'
 import clientRoutes from './routes/clientRoutes.js'
 import userRoutes from './routes/userRoutes.js'
 import chatRoutes from './routes/chatRoutes.js'
-import { domainRouter, hostingRouter } from './routes/infrastructureRoutes.js'
+import { domainRouter, hostingRouter, registrarRouter } from './routes/infrastructureRoutes.js'
 
 import {
   startLeaveScheduler,
@@ -125,6 +125,7 @@ app.use('/api/admin', adminClientRouter)
 
 app.use('/api/domains', withEmit(domainRouter, 'domains'))
 app.use('/api/hosting', withEmit(hostingRouter, 'hosting'))
+app.use('/api/registrars', withEmit(registrarRouter, 'registrars'))
 
 app.use(
   '/api/users',

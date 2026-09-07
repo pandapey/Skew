@@ -240,6 +240,7 @@ export async function syncProjectProgressToClient(projectId, progress, tasks) {
 }
 
 async function recomputeProgress(projectId) {
+  if (!projectId) return 0
   const tasks = await ProjectTask.find({ project: projectId }).lean()
   const done = tasks.filter((t) => t.status === 'Done').length
   const progress = tasks.length ? Math.round((done / tasks.length) * 100) : 0
@@ -607,15 +608,29 @@ export const projectService = {
   },
 
   async createTask(body, actor = 'System', user = null) {
-    if (!body.project) throw new ApiError(422, 'project is required')
-    const project = await Project.findById(body.project).lean()
-    if (!project) throw new ApiError(404, 'Project not found')
+    const rawProject = body.project
+    const projectId = rawProject && String(rawProject).trim() && String(rawProject).trim().toLowerCase() !== 'null' && String(rawProject).trim().toLowerCase() !== 'general' ? String(rawProject).trim() : null
+    let project = null
+    if (projectId) {
+      if (!mongoose.isValidObjectId(projectId)) throw new ApiError(422, 'Invalid project')
+      project = await Project.findById(projectId).lean()
+      if (!project) throw new ApiError(404, 'Project not found')
+      if (user) await assertCanAssign(project, body.assignee, user)
+    } else {
+      // General Task: validate assignee if provided
+      if (user && body.assignee) {
+        const target = await User.findOne({ name: body.assignee }).select('role status').lean()
+        if (target) {
+          if (target.status !== 'Active') throw new ApiError(422, 'Assignee must be an active internal user')
+          if (!TASK_ASSIGNEE_ROLES.includes(target.role)) throw new ApiError(403, 'Tasks can only be assigned to internal users')
+        }
+      }
+    }
 
-    if (user) await assertCanAssign(project, body.assignee, user)
-
-    const { startedAt, completedAt, durationSec, pausedAt, pauseIntervals, history, ...clean } = body
+    const { startedAt, completedAt, durationSec, pausedAt, pauseIntervals, history, project: _proj, ...clean } = body
     const task = await ProjectTask.create({
       ...clean,
+      project: projectId ? project._id : null,
       assignedBy: actor,
       reporter: body.reporter || actor,
       submissionStatus: 'Not Submitted',
@@ -625,17 +640,20 @@ export const projectService = {
       pushHistory(task, 'Assigned', actor, { to: task.assignee })
       await task.save()
     }
-    await recomputeProgress(task.project)
-    await logActivity(task.project, actor, `created ${task.type.toLowerCase()} "${task.title}"`, task.title)
+    if (task.project) {
+      await recomputeProgress(task.project)
+      await logActivity(task.project, actor, `created ${task.type.toLowerCase()} "${task.title}"`, task.title)
+    }
     notify('team@skew.com', `New ${task.type}`, `${actor} created "${task.title}"`)
 
     if (task.assignee && task.assignee !== actor) {
+      const bodyText = project ? `${actor} assigned you “${task.title}” in ${project.name}${task.dueDate ? ` (due ${task.dueDate})` : ''}.` : `${actor} assigned you “${task.title}”${task.dueDate ? ` (due ${task.dueDate})` : ''}.`
       await notifyByName([task.assignee], {
         type: 'task',
         title: 'Task Assigned',
-        body: `${actor} assigned you “${task.title}” in ${project.name}${task.dueDate ? ` (due ${task.dueDate})` : ''}.`,
+        body: bodyText,
         sender: actor,
-        link: `/projects/${task.project}`,
+        link: task.project ? `/projects/${task.project}` : '/my-tasks',
         priority: task.priority === 'Urgent' ? 'high' : 'normal',
       })
     }
@@ -646,19 +664,48 @@ export const projectService = {
     const existing = await ProjectTask.findById(id).lean()
     if (!existing) throw new ApiError(404, 'Task not found')
 
-    if (user) {
-      const project = await Project.findById(existing.project).lean()
-      if (!project) throw new ApiError(404, 'Project not found')
-      const nextAssignee = patch.assignee !== undefined ? patch.assignee : existing.assignee
-      await assertCanAssign(project, nextAssignee, user)
+    // Normalize project in patch: allow null / '' / 'general' for General Task
+    let normalizedPatch = { ...patch }
+    if ('project' in patch) {
+      const raw = patch.project
+      const pid = raw && String(raw).trim() && String(raw).trim().toLowerCase() !== 'null' && String(raw).trim().toLowerCase() !== 'general' ? String(raw).trim() : null
+      if (pid) {
+        if (!mongoose.isValidObjectId(pid)) throw new ApiError(422, 'Invalid project')
+        const proj = await Project.findById(pid).lean()
+        if (!proj) throw new ApiError(404, 'Project not found')
+        normalizedPatch.project = proj._id
+      } else {
+        normalizedPatch.project = null
+        normalizedPatch.sprint = null
+      }
     }
 
-    const { startedAt, completedAt, durationSec, pausedAt, pauseIntervals, history, ...safe } = patch
+    if (user) {
+      const targetProjectId = 'project' in normalizedPatch ? normalizedPatch.project : existing.project
+      if (targetProjectId) {
+        const project = await Project.findById(targetProjectId).lean()
+        if (!project) throw new ApiError(404, 'Project not found')
+        const nextAssignee = normalizedPatch.assignee !== undefined ? normalizedPatch.assignee : existing.assignee
+        await assertCanAssign(project, nextAssignee, user)
+      } else {
+        // General Task: validate assignee without project
+        const nextAssignee = normalizedPatch.assignee !== undefined ? normalizedPatch.assignee : existing.assignee
+        if (nextAssignee) {
+          const target = await User.findOne({ name: nextAssignee }).select('role status').lean()
+          if (target) {
+            if (target.status !== 'Active') throw new ApiError(422, 'Assignee must be an active internal user')
+            if (!TASK_ASSIGNEE_ROLES.includes(target.role)) throw new ApiError(403, 'Tasks can only be assigned to internal users')
+          }
+        }
+      }
+    }
+
+    const { startedAt, completedAt, durationSec, pausedAt, pauseIntervals, history, ...safe } = normalizedPatch
     const task = await ProjectTask.findByIdAndUpdate(id, safe, { new: true, runValidators: true })
     if (!task) throw new ApiError(404, 'Task not found')
 
-    if (patch.assignee !== undefined && patch.assignee !== existing.assignee) {
-      pushHistory(task, 'Reassigned', actor, { from: existing.assignee || null, to: patch.assignee || null })
+    if (normalizedPatch.assignee !== undefined && normalizedPatch.assignee !== existing.assignee) {
+      pushHistory(task, 'Reassigned', actor, { from: existing.assignee || null, to: normalizedPatch.assignee || null })
       task.assignmentStatus = 'Reassigned'
       task.startedAt = null
       task.completedAt = null
@@ -667,15 +714,19 @@ export const projectService = {
       task.pauseIntervals = []
       await task.save()
     }
-    await recomputeProgress(task.project)
+    // Recompute progress for both old and new project if changed, but skip for null
+    const oldProj = existing.project ? String(existing.project) : null
+    const newProj = task.project ? String(task.project) : null
+    if (oldProj && oldProj !== newProj) await recomputeProgress(oldProj).catch(()=>{})
+    if (newProj) await recomputeProgress(newProj).catch(()=>{})
 
-    if (patch.assignee && patch.assignee !== existing.assignee && patch.assignee !== actor) {
-      await notifyByName([patch.assignee], {
+    if (normalizedPatch.assignee && normalizedPatch.assignee !== existing.assignee && normalizedPatch.assignee !== actor) {
+      await notifyByName([normalizedPatch.assignee], {
         type: 'task',
         title: 'Task Assigned',
         body: `${actor} assigned you “${task.title}”.`,
         sender: actor,
-        link: `/projects/${task.project}`,
+        link: task.project ? `/projects/${task.project}` : '/my-tasks',
       })
     }
     return withId(task.toObject())
@@ -834,6 +885,10 @@ export const projectService = {
       const v = scalarOrNull(query[k])
       if (v != null) filter[k] = v
     }
+    // Handle General Task filter: project=general -> project null
+    if (query.project === 'general' || query.project === 'General' || filter.project === 'general' || filter.project === 'General') {
+      filter.project = null
+    }
     if (query.backlog === 'true') filter.sprint = null
     if (query.search) filter.$or = [
       { title: { $regex: escapeRegex(query.search), $options: 'i' } },
@@ -841,12 +896,13 @@ export const projectService = {
     ]
 
     const scope = await accessibleProjectFilter(user)
-    if (scope.$or) {
+    const isPrivileged = !user || PROJECT_FULL_ACCESS.includes(user.role)
+    if (!isPrivileged && scope.$or) {
       const ids = (await Project.find(scope).select('_id').lean()).map((p) => String(p._id))
-      if (filter.project) {
-        if (!ids.includes(String(filter.project))) return []
+      if ('project' in filter) {
+        if (filter.project !== null && !ids.includes(String(filter.project))) return []
       } else {
-        filter.project = { $in: ids }
+        filter.project = { $in: [...ids, null] }
       }
     }
     const rows = await ProjectTask.find(filter).sort({ order: 1, createdAt: -1 }).lean()
@@ -858,9 +914,10 @@ export const projectService = {
     const uid = String(user?._id || user?.id || '')
     const filter = { assignee: user.name, viewedBy: { $ne: uid } }
     const scope = await accessibleProjectFilter(user)
-    if (scope.$or) {
+    const isPrivileged = !user || PROJECT_FULL_ACCESS.includes(user.role)
+    if (!isPrivileged && scope.$or) {
       const ids = (await Project.find(scope).select('_id').lean()).map((p) => String(p._id))
-      filter.project = { $in: ids }
+      filter.project = { $in: [...ids, null] }
     }
     const count = await ProjectTask.countDocuments(filter)
     return { count }
@@ -883,27 +940,34 @@ export const projectService = {
 
   async taskHistory(query, user, options = {}) {
     const filter = {}
-    const project = scalarOrNull(query.project)
+    let project = scalarOrNull(query.project)
+    if (project === 'general' || project === 'General') project = null
+    // scalarOrNull converts empty string to null, but 'general' is explicit
+    if (query.project === 'general' || query.project === 'General') project = null
     if (project != null) filter.project = project
+    else if (query.project === 'general' || query.project === 'General') filter.project = null
 
     const mine = String(query.mine ?? '') === 'true'
     const privileged = PROJECT_FULL_ACCESS.includes(user?.role)
     const ownershipVerified = options.ownershipVerified === true && project != null
 
     if (ownershipVerified) {
-    } else if (mine || (!project && !privileged)) {
+    } else if (mine || (!project && !privileged && filter.project !== null)) {
       filter.assignee = user?.name
     } else {
       const scope = await accessibleProjectFilter(user)
-      if (scope.$or) {
+      const isPrivileged = privileged
+      if (!isPrivileged && scope.$or) {
         const ids = (await Project.find(scope).select('_id').lean()).map((p) => String(p._id))
-        if (filter.project) {
-          if (!ids.includes(String(filter.project))) {
+        if ('project' in filter) {
+          if (filter.project !== null && !ids.includes(String(filter.project))) {
             throw new ApiError(403, 'You do not have access to this project')
           }
         } else {
-          filter.project = { $in: ids }
+          filter.project = { $in: [...ids, null] }
         }
+      } else if ('project' in filter && filter.project === null) {
+        // General Tasks: no scope check needed
       }
     }
 
@@ -913,10 +977,11 @@ export const projectService = {
     const rows = await ProjectTask.find(filter).sort({ updatedAt: -1 }).lean()
     if (!rows.length) return []
 
-    const projectIds = [...new Set(rows.map((r) => String(r.project)))]
+    const rawProjectIds = [...new Set(rows.map((r) => String(r.project || '')))]
+    const projectIds = rawProjectIds.filter((id) => id && id !== 'null' && mongoose.isValidObjectId(id))
     const taskIds = rows.map((r) => r._id)
     const [projects, commentRows] = await Promise.all([
-      Project.find({ _id: { $in: projectIds } }).select('name').lean(),
+      projectIds.length ? Project.find({ _id: { $in: projectIds } }).select('name').lean() : Promise.resolve([]),
       ProjectComment.find({ task: { $in: taskIds } }).sort({ createdAt: 1 }).lean(),
     ])
     const nameById = Object.fromEntries(projects.map((p) => [String(p._id), p.name]))

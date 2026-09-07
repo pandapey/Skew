@@ -306,12 +306,27 @@ export default function ChatPage() {
     mutationFn: (cid) => chatApi.markRead(cid || activeIdRef.current || activeId),
     onSuccess: (_data, cid) => {
       const target = cid || activeIdRef.current || activeId
-      // optimistic: set unread to 0 for this conversation
+      // capture previous unread before optimistic update so we can decrement total badge immediately
+      const prevConvs = qc.getQueryData(QK.conversations)
+      const prevUnread = Array.isArray(prevConvs) ? (prevConvs.find((c) => String(c._id) === String(target))?.unreadCount || 0) : 0
+      // optimistic: set unread to 0 for this conversation and immediately update total badge
       qc.setQueryData(QK.conversations, (old) => {
         if (!Array.isArray(old)) return old
         return old.map((c) => String(c._id) === String(target) ? { ...c, unreadCount: 0 } : c)
       })
+      if (prevUnread > 0) {
+        qc.setQueryData(['chat-unread-count'], (old) => {
+          if (!old) return { count: 0 }
+          const count = old?.count != null ? old.count : (typeof old === 'number' ? old : 0)
+          const next = Math.max(0, count - prevUnread)
+          return old?.count != null ? { ...old, count: next } : { count: next }
+        })
+      } else {
+        qc.invalidateQueries({ queryKey: ['chat-unread-count'] })
+      }
       qc.invalidateQueries({ queryKey: QK.conversations })
+      qc.invalidateQueries({ queryKey: ['chat-unread-count'] })
+      qc.invalidateQueries({ queryKey: ['chat-conversations'] })
       if (target) qc.invalidateQueries({ queryKey: QK.messages(target) })
     },
   })
@@ -353,6 +368,7 @@ export default function ChatPage() {
     const onNew = ({ conversationId, message }) => {
       qc.invalidateQueries({ queryKey: QK.messages(conversationId) })
       qc.invalidateQueries({ queryKey: QK.conversations })
+      qc.invalidateQueries({ queryKey: ['chat-unread-count'] })
       if (String(conversationId) === String(activeIdRef.current) && message?.sender && String(message.sender) !== String(me?._id)) {
         chatApi.markDelivered(conversationId, [message._id]).catch(() => {})
         if (String(activeIdRef.current) === String(conversationId)) markRead(conversationId)
@@ -362,10 +378,10 @@ export default function ChatPage() {
     const onDeleted = ({ conversationId }) => qc.invalidateQueries({ queryKey: QK.messages(conversationId) })
     const onReact = ({ conversationId }) => qc.invalidateQueries({ queryKey: QK.messages(conversationId) })
     const onDelivered = ({ conversationId }) => qc.invalidateQueries({ queryKey: QK.messages(conversationId) })
-    const onRead = ({ conversationId }) => { qc.invalidateQueries({ queryKey: QK.messages(conversationId) }); qc.invalidateQueries({ queryKey: QK.conversations }) }
+    const onRead = ({ conversationId }) => { qc.invalidateQueries({ queryKey: QK.messages(conversationId) }); qc.invalidateQueries({ queryKey: QK.conversations }); qc.invalidateQueries({ queryKey: ['chat-unread-count'] }) }
     const onTyping = ({ conversationId, userName }) => setTypingUsers((p) => ({ ...p, [conversationId]: userName }))
     const onStop = ({ conversationId }) => setTypingUsers((p) => { const n = { ...p }; delete n[conversationId]; return n })
-    const onConv = () => qc.invalidateQueries({ queryKey: QK.conversations })
+    const onConv = () => { qc.invalidateQueries({ queryKey: QK.conversations }); qc.invalidateQueries({ queryKey: ['chat-unread-count'] }) }
     const onPresence = ({ userId, isOnline, lastSeen }) => setPresence((p) => ({ ...p, [userId]: { userId, isOnline, lastSeen } }))
     const onOnline = ({ userId }) => setPresence((p) => ({ ...p, [userId]: { userId, isOnline: true } }))
     const onOffline = ({ userId, lastSeen }) => setPresence((p) => ({ ...p, [userId]: { userId, isOnline: false, lastSeen } }))

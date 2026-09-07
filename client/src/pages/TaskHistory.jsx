@@ -43,7 +43,6 @@ function formatDuration(sec) {
   return `${s}s`
 }
 
-// Live duration cell — ticks once a second only while the task is running.
 function DurationCell({ task }) {
   const live = isTaskRunning(task) || isTaskPaused(task)
   const [now, setNow] = useState(() => Date.now())
@@ -132,13 +131,12 @@ export default function TaskHistory() {
   const rows = Array.isArray(data) ? data : []
   const projectOptions = useMemo(() => ([
     { value: '', label: 'All projects' },
+    { value: 'general', label: 'No Project / General Tasks' },
     ...(projectsQuery.data || []).map((p) => ({ value: p.id, label: p.name })),
   ]), [projectsQuery.data])
 
   const dirty = JSON.stringify(filters) !== JSON.stringify(EMPTY_FILTERS)
 
-  // Create-task flow (employee self-service, same as My Tasks) — the project
-  // is chosen INSIDE the task form now, no separate picker step.
   const [createOpen, setCreateOpen] = useState(false)
   const { data: assignees = [] } = useQuery({ queryKey: ['project-assignees'], queryFn: () => projectApi.assignees() })
 
@@ -162,9 +160,6 @@ export default function TaskHistory() {
     onError: (err) => toast.error(err?.response?.data?.message || 'Could not create this task'),
   })
 
-  // PHASE: EMPLOYEE TASK READ STATE — opening a task's timeline marks it read.
-  // Only fires for the assignee's own unread tasks; only touches the badge
-  // count, never the timeline content.
   const markViewedMut = useMutation({
     mutationFn: (id) => projectApi.markTaskViewed(id),
     onSuccess: () => {
@@ -190,7 +185,7 @@ export default function TaskHistory() {
         )}
       </div>
     ) },
-    { key: 'projectName', header: 'Project', render: (t) => <span className="text-muted">{t.projectName || '\u2014'}</span> },
+    { key: 'projectName', header: 'Project', render: (t) => <span className={t.projectName && t.projectName !== 'No Project' ? 'text-muted' : 'text-muted italic'}>{t.projectName || (t.project ? '\u2014' : 'No Project')}</span> },
     { key: 'assignee', header: 'Assignee', render: (t) => t.assignee || '\u2014' },
     { key: 'startedAt', header: 'Started', render: (t) => formatDateTime(t.startedAt) },
     { key: 'durationSec', header: 'Duration', render: (t) => <DurationCell task={t} /> },

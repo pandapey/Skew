@@ -210,8 +210,8 @@ export default function MyTasks() {
   }
 
   const projectName = (t) => {
-    if (!t.project) return 'No Project'
-    return projectMap[t.project] || t.projectName || 'No Project'
+    if (!t.project) return 'General Task'
+    return projectMap[t.project] || t.projectName || 'General Task'
   }
 
   const counts = useMemo(() => ({
@@ -255,7 +255,7 @@ export default function MyTasks() {
         )}
       </div>
     ) },
-    { key: 'project', header: 'Project', sortable: true, render: (t) => <span className={t.project ? 'text-muted' : 'text-muted italic'}>{projectName(t)}</span> },
+    { key: 'project', header: 'Project', sortable: true, render: (t) => <span className={t.project ? '' : 'inline-flex items-center rounded-full bg-accent/10 px-2 py-0.5 text-xs font-semibold text-accent'}>{projectName(t)}</span> },
     { key: 'createdAt', header: 'Assigned Date', sortable: true, render: (t) => formatDate(t.createdAt) },
     { key: 'startedAt', header: 'Started', sortable: true, render: (t) => formatDateTime(t.startedAt) },
     { key: 'durationSec', header: 'Working Time', render: (t) => <WorkingTimeCell task={t} /> },

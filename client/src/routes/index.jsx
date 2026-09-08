@@ -77,6 +77,7 @@ const AdminRoles = lazy(() => import('@/pages/admin/Roles'))
 const AdminAuditLogs = lazy(() => import('@/pages/admin/AuditLogs'))
 const AdminSystemLogs = lazy(() => import('@/pages/admin/SystemLogs'))
 const AdminPlans = lazy(() => import('@/pages/admin/Plans'))
+const AdminDomainPlans = lazy(() => import('@/pages/admin/DomainPlans'))
 const AdminDbHealth = lazy(() => import('@/pages/admin/DatabaseHealth'))
 const AdminAnalytics = lazy(() => import('@/pages/admin/Analytics'))
 const Profile = lazy(() => import('@/pages/Profile'))
@@ -239,6 +240,7 @@ export const router = createBrowserRouter([
           { path: 'audit-logs', element: s(AdminAuditLogs) },
           { path: 'system-logs', element: s(AdminSystemLogs) },
           { path: 'plans', element: s(AdminPlans) },
+          { path: 'domain-plans', element: s(AdminDomainPlans) },
           { path: 'database-health', element: s(AdminDbHealth) },
           { path: 'analytics', element: s(AdminAnalytics) },
         ],

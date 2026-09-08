@@ -3,8 +3,8 @@ import { useQuery } from '@tanstack/react-query'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import {
-  FiFolder, FiActivity, FiCheckCircle, FiAlertCircle, FiFlag,
-  FiTrendingUp, FiArrowRight, FiColumns, FiPlus,
+  FiFolder, FiCheckCircle,
+  FiArrowRight, FiColumns, FiPlus,
 } from 'react-icons/fi'
 import { projectApi } from '@/api/services'
 import { useAuth } from '@/hooks/useAuth'
@@ -43,7 +43,6 @@ export default function Projects() {
 
   const { data: stats, isLoading, isError: statsError, error: statsErr } = useQuery({ queryKey: ['project-stats'], queryFn: projectApi.stats, enabled: !isEmployee })
   const { data: projects = [], isLoading: projectsLoading } = useQuery({ queryKey: ['projects-all'], queryFn: projectApi.all })
-
 
   if (isLoading) return <Loader label="Loading projects…" />
 
@@ -129,27 +128,14 @@ onClick={() => navigate(`/projects/${p.code || p.id}`)}
         }
       />
 
-    
       <div className="mb-4 grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard label="Projects" value={stats.totalProjects} icon={FiFolder} />
-        <StatCard label="Active" value={stats.activeProjects} icon={FiActivity} tone="primary" />
         <StatCard label="Tasks Done" value={`${stats.doneTasks}/${stats.totalTasks}`} icon={FiCheckCircle} tone="success" onClick={() => navigate('/projects/board')} />
-        <StatCard label="Open Bugs" value={stats.openBugs} icon={FiAlertCircle} tone="danger" onClick={() => navigate('/projects/bugs')} />
-      </div>
-      <div className="mb-4 grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard label="Open Tasks" value={stats.openTasks} icon={FiFolder} tone="warning" onClick={() => navigate('/projects/board')} />
-        <StatCard
-          label="Milestones"
-          value={`${stats.milestonesReached}/${stats.totalMilestones}`}
-          icon={FiFlag}
-          tone="accent"
-          onClick={visibleSections.some((s) => s.key === 'milestones') ? () => navigate('/projects/milestones') : undefined}
-        />
         <StatCard label="Completed" value={stats.completedProjects} icon={FiCheckCircle} tone="success" />
-        <StatCard label="Avg Progress" value={`${stats.avgProgress}%`} icon={FiTrendingUp} tone="primary" />
       </div>
 
-      {/* Charts */}
+      {}
       <div className="mb-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-2">
           <CardHeader title="Tasks by Status" />
@@ -161,7 +147,7 @@ onClick={() => navigate(`/projects/${p.code || p.id}`)}
         </Card>
       </div>
 
-      {/* Project cards */}
+      {}
       <h2 className="mb-2 mt-6 text-sm font-semibold text-muted">Projects</h2>
       <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {projects.map((p, i) => (
@@ -207,7 +193,7 @@ onClick={() => navigate(`/projects/${p.code || p.id}`)}
         ))}
       </div>
 
-      {/* Section grid */}
+      {}
       <h2 className="mb-3 text-sm font-semibold text-muted">Tools</h2>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {visibleSections.map((s, i) => (

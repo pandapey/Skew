@@ -5,11 +5,9 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { cn } from '@/utils'
 import { useAnchoredPopover } from './useAnchoredPopover'
 
-// Glass form field with floating label + animated focus. Works with
-// react-hook-form refs. Pass `icon` to render a leading icon (shown in a
-// tinted chip) and `trailing` for a control on the right (e.g. show/hide).
 export const Input = forwardRef(function Input({ label, error, icon: Icon, trailing, className, id, placeholder, ...props }, ref) {
-  const inputId = useId()
+  const fallbackId = useId()
+  const inputId = id ?? fallbackId
   const hasPlaceholder = Boolean(placeholder)
   return (
     <div className={cn('group relative', className)}>
@@ -54,9 +52,6 @@ export const Input = forwardRef(function Input({ label, error, icon: Icon, trail
   )
 })
 
-// Set a controlled/RHF <select>'s value the way React expects, then dispatch a
-// real bubbling change event so both react-hook-form (ref-based) and controlled
-// `onChange(e => e.target.value)` consumers fire correctly.
 function setNativeSelectValue(el, value) {
   if (!el) return
   const desc = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value')
@@ -65,12 +60,6 @@ function setNativeSelectValue(el, value) {
   el.dispatchEvent(new Event('change', { bubbles: true }))
 }
 
-// Premium enterprise dropdown. Drop-in replacement for the old native <select>:
-// same props (label, error, options|children, value/defaultValue, onChange, ref,
-// name, disabled, className). A visually-hidden native <select> remains the
-// source of truth (RHF ref, form submission, value, a11y), while a custom
-// listbox provides search, keyboard nav, clear, loading + dark/light theming.
-// Because every screen imports this shared Select, all dropdowns upgrade at once.
 export const Select = forwardRef(function Select(
   { label, error, options = [], className, children, id, value, defaultValue, onChange, disabled, loading, placeholder = 'Select…', searchable, clearable = false, emptyText = 'No results', ...props },
   ref
@@ -80,7 +69,6 @@ export const Select = forwardRef(function Select(
   const searchRef = useRef(null)
   useImperativeHandle(ref, () => hiddenRef.current, [])
 
-  // Normalize option list from the `options` prop or <option> children.
   const list = useMemo(() => {
     if (Array.isArray(options) && options.length) {
       return options.map((o) => (o && typeof o === 'object'
@@ -103,9 +91,8 @@ export const Select = forwardRef(function Select(
   const [active, setActive] = useState(0)
   const [current, setCurrent] = useState(value ?? defaultValue ?? '')
 
-  // Keep the visible trigger in sync with controlled `value`...
   useEffect(() => { if (value !== undefined) setCurrent(value) }, [value])
-  // ...and with programmatic (RHF reset/setValue) changes when uncontrolled.
+
   useEffect(() => {
     if (value === undefined && hiddenRef.current && hiddenRef.current.value !== current) {
       setCurrent(hiddenRef.current.value)
@@ -117,13 +104,6 @@ export const Select = forwardRef(function Select(
   const selected = list.find((o) => String(o.value) === String(current))
   const displayLabel = selected ? selected.label : ''
 
-  // Phase 6.23 (TASK 1): the listbox is portalled into <body> and positioned
-  // from the trigger's measured rect by the SHARED popover primitive the
-  // Dropdown already uses (useAnchoredPopover.js), so it can no longer be
-  // clipped by an overflow ancestor nor trapped inside a `.card`
-  // backdrop-filter stacking context - which is what put the Client Portal
-  // Documents category picker behind the footer. The hook also owns
-  // click-outside + Escape, since the surface is no longer a DOM descendant.
   const closeMenu = useCallback(() => setOpen(false), [])
   const { rootRef, anchorRef, popoverRef, style: menuStyle } = useAnchoredPopover({
     open: open && !disabled,
@@ -151,7 +131,7 @@ export const Select = forwardRef(function Select(
 
   return (
     <div ref={rootRef} className={cn('relative', className)}>
-      {/* Hidden native <select> = source of truth (RHF ref / value / a11y). */}
+      {}
       <select
         ref={hiddenRef}
         id={selectId}
@@ -167,15 +147,11 @@ export const Select = forwardRef(function Select(
         {children || list.map((o) => <option key={String(o.value)} value={o.value}>{o.label}</option>)}
       </select>
 
-      {/* Premium trigger */}
+      {}
       <button
         ref={anchorRef}
         type="button"
         disabled={disabled}
-        // BUGFIX: the Select is often rendered inside a clickable row, card or
-        // tile. Letting the opening click bubble also fired that ancestor
-        // handler (navigate / open a modal / re-render), which tore the listbox
-        // down again right after it appeared.
         onPointerDown={(e) => e.stopPropagation()}
         onMouseDown={(e) => e.stopPropagation()}
         onClick={(e) => { e.stopPropagation(); if (!disabled && !loading) setOpen((o) => !o) }}
@@ -199,7 +175,7 @@ export const Select = forwardRef(function Select(
         </label>
       )}
 
-      {/* Right controls: clear + loading + chevron */}
+      {}
       <div className="pointer-events-none absolute right-3 top-1/2 flex -translate-y-1/2 items-center gap-1">
         {loading && <span className="h-4 w-4 animate-spin rounded-full border-2 border-primary/30 border-t-primary" />}
         {clearable && !loading && displayLabel && current !== '' && (
@@ -221,20 +197,9 @@ export const Select = forwardRef(function Select(
             exit={{ opacity: 0, y: -6, scale: 0.98 }}
             transition={{ duration: 0.14, ease: [0.22, 1, 0.36, 1] }}
             role="listbox"
-            // The listbox is portalled into <body>, but React still bubbles its
-            // synthetic events to this component's React ancestors. Keep them in.
             onPointerDown={(e) => e.stopPropagation()}
             onMouseDown={(e) => e.stopPropagation()}
             onClick={(e) => e.stopPropagation()}
-            // Phase 6.20 (TASK 2): the listbox was `w-full`, i.e. exactly the
-            // width of its trigger. Wherever the shared Select is rendered with
-            // a shrink-to-fit trigger - `className="w-auto"` on the client
-            // Documents category picker, for one - the popup inherited that
-            // narrow width and, with `overflow-hidden` on the same element,
-            // longer option labels ('Requirement', 'Quotation') were cut off.
-            // `min-w-full w-max` keeps the popup at least as wide as the
-            // trigger while letting it grow to its widest option, capped at the
-            // viewport so it can never overflow horizontally on mobile.
             className="glass-strong fixed z-[60] flex w-max max-w-[min(20rem,calc(100vw-1rem))] flex-col overflow-hidden rounded-card p-1.5 shadow-floating"
           >
             {canSearch && (

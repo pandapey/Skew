@@ -154,11 +154,10 @@ export default function Hosting() {
         icon={FiServer}
       />
 
-      <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <StatCard label="Plans managed" value={summaryData.total} tone="primary" icon={FiServer} />
         <StatCard label="Expiring in 30 days" value={summaryData.expiringSoon} tone="warning" icon={FiServer} />
         <StatCard label="Already expired" value={summaryData.expired} tone="danger" icon={FiServer} />
-        <StatCard label="Renewal value" value={summaryData.renewalValue} format={formatMoney} tone="success" icon={FiServer} />
       </div>
 
       <Card>

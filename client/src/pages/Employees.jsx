@@ -69,7 +69,6 @@ export default function Employees() {
     onSuccess: (res) => { toast.success(`${res.updated} employees updated`); setSelected([]); invalidate() },
   })
 
-  // --- Selection helpers ---
   const allChecked = rows.length > 0 && rows.every((r) => selected.includes(r.id))
   const toggleAll = () => setSelected(allChecked ? selected.filter((id) => !rows.some((r) => r.id === id)) : [...new Set([...selected, ...rows.map((r) => r.id)])])
   const toggleOne = (id) => setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]))
@@ -150,9 +149,9 @@ export default function Employees() {
       />
 
       <div className="mb-4 grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard label="Total" value={stats?.total ?? '—'} icon={FiUsers} />
-        <StatCard label="Absent Today" value={attStats?.absent ?? '—'} icon={FiUserX} tone="danger" />
-        <StatCard label="On Leave" value={stats?.onLeave ?? '—'} icon={FiUserX} tone="warning" />
+        <StatCard label="Total" value={stats?.total ?? '—'} icon={FiUsers} onClick={() => navigate('/employees')} />
+        <StatCard label="Absent Today" value={attStats?.absent ?? '—'} icon={FiUserX} tone="danger" onClick={() => navigate('/attendance?status=Absent')} />
+        <StatCard label="On Leave" value={stats?.onLeave ?? '—'} icon={FiUserX} tone="warning" onClick={() => navigate('/attendance?status=On%20Leave')} />
         <StatCard label="Avg Salary" value={stats ? formatCurrency(stats.avgSalary) : '—'} icon={FiUsers} tone="accent" />
       </div>
 

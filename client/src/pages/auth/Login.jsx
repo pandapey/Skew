@@ -36,12 +36,17 @@ function detectClientContext() {
             : /linux/.test(lower) ? 'Linux'
               : 'Unknown'
   const browser =
-    /edg\//.test(lower) ? 'Edge'
-      : /opr\/|opera/.test(lower) ? 'Opera'
-        : /chrome\//.test(lower) ? 'Chrome'
-          : /firefox\//.test(lower) ? 'Firefox'
-            : /safari\//.test(lower) ? 'Safari'
-              : 'Unknown'
+    /edg/i.test(lower)
+      ? 'Edge'
+      : /opr\/|opera/i.test(lower)
+        ? 'Opera'
+        : /chrome/i.test(lower)
+          ? 'Chrome'
+          : /firefox/i.test(lower)
+            ? 'Firefox'
+            : /safari/i.test(lower)
+              ? 'Safari'
+              : 'Unknown';
   const device =
     /ipad|tablet/.test(lower) ? 'Tablet'
       : /ipod|iphone|android.*mobile|mobile/.test(lower) ? 'Mobile'
@@ -101,12 +106,12 @@ export default function Login() {
       onMouseMove={handleMouseMove}
       style={{ '--mx': `${mousePosition.x * 100}%`, '--my': `${mousePosition.y * 100}%` }}
     >
-      {/* ============ ADVANCED BACKGROUND LAYER ============ */}
+      { }
       <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden" aria-hidden="true" style={{ willChange: 'transform' }}>
-        {/* Deep base gradient */}
+        { }
         <div className="absolute inset-0 bg-gradient-to-br from-slate-50 via-blue-50/50 to-indigo-50/30 dark:from-slate-950 dark:via-slate-900 dark:to-indigo-950/30" />
 
-        {/* Dynamic mesh gradients */}
+        { }
         <div
           className="absolute inset-0"
           style={{
@@ -118,7 +123,7 @@ export default function Login() {
           }}
         />
 
-        {/* Animated aurora blobs */}
+        { }
         <motion.div
           className="absolute top-1/6 left-1/6 w-[500px] h-[500px] rounded-full"
           style={{
@@ -170,7 +175,7 @@ export default function Login() {
           transition={{ duration: 20, ease: 'easeInOut', repeat: Infinity }}
         />
 
-        {/* Subtle grid pattern with perspective */}
+        { }
         <div className="absolute inset-0 opacity-5" style={{
           backgroundImage: 'linear-gradient(rgba(148, 163, 184, 0.4) 1px, transparent 1px), linear-gradient(90deg, rgba(148, 163, 184, 0.4) 1px, transparent 1px)',
           backgroundSize: '40px 40px',
@@ -178,14 +183,14 @@ export default function Login() {
           WebkitMaskImage: 'radial-gradient(ellipse 100% 80% at 50% 0%, #000 30%, transparent 100%)',
         }} />
 
-        {/* Noise texture */}
+        { }
         <div className="absolute inset-0 pointer-events-none" style={{
           opacity: 'var(--noise-opacity, 0.04)',
           backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E\")",
           backgroundSize: '200px 200px',
         }} />
 
-        {/* Floating light orbs */}
+        { }
         {[1, 2, 3, 4, 5].map((i) => (
           <motion.div
             key={i}
@@ -210,7 +215,7 @@ export default function Login() {
           />
         ))}
 
-        {/* Interactive mouse glow */}
+        { }
         <motion.div
           className="absolute rounded-full pointer-events-none mix-blend-screen"
           style={{
@@ -227,10 +232,10 @@ export default function Login() {
       </div>
 
       <div className="relative z-10 flex min-h-screen">
-        {/* ============ LEFT BRAND SECTION - CLEAN & SIMPLE ============ */}
+        { }
         <aside className="hidden lg:flex lg:w-1/2 flex-col items-center justify-center p-12 lg:p-20 relative overflow-hidden">
           <div className="relative z-10 w-full max-w-2xl text-center">
-            {/* Simple Logo - Clean & Static */}
+            { }
             <div className="mb-10">
               <img
                 src="/favo.png"
@@ -247,7 +252,7 @@ export default function Login() {
               Enterprise Management System
             </p>
 
-            {/* Hero Tagline */}
+            { }
             <motion.div
               className="mt-16"
               initial={{ opacity: 0, y: 30, filter: 'blur(8px)' }}
@@ -264,7 +269,7 @@ export default function Login() {
             </motion.div>
           </div>
 
-          {/* Subtle ambient glows only */}
+          { }
           <div className="absolute inset-0 pointer-events-none overflow-hidden" aria-hidden="true">
             <div className="absolute top-20 right-10 w-80 h-80 rounded-full bg-gradient-to-br from-primary/5 via-transparent to-accent/5 blur-3xl" />
             <div className="absolute bottom-20 left-10 w-96 h-96 rounded-full bg-gradient-to-tr from-violet/5 via-transparent to-accent/5 blur-3xl" />
@@ -272,43 +277,47 @@ export default function Login() {
           </div>
         </aside>
 
-        {/* ============ RIGHT LOGIN SECTION ============ */}
+        { }
         <main className="relative flex-1 flex min-h-screen items-center justify-center p-6 lg:p-12">
           <div className="relative z-10 w-full max-w-md">
-            {/* AuthHero */}
+            { }
             <AuthHero title="Welcome back" subtitle="Sign in to access your workspace" />
 
-            {/* ============ CLEAN GLASS LOGIN CARD ============ */}
+            { }
             <motion.div
               variants={item}
               className="relative"
             >
-              {/* Clean glass card - no corner accents, no border glow */}
+              { }
               <div className="relative rounded-3xl bg-white/10 dark:bg-slate-950/10 backdrop-blur-3xl border border-white/20 dark:border-white/10 shadow-[0_25px_80px_-20px_rgba(2,6,23,0.4),0_8px_32px_-8px_rgba(2,6,23,0.2),inset_0_1px_0_rgba(255,255,255,0.15)]">
-                {/* Inner highlight */}
+                { }
                 <div className="absolute inset-0 rounded-3xl bg-gradient-to-b from-white/20 via-transparent to-transparent dark:from-white/10 dark:via-transparent pointer-events-none" />
 
-                {/* Top gradient line - subtle */}
+                { }
                 <div className="absolute top-0 left-1/2 -translate-x-1/2 w-1/2 h-0.5 bg-gradient-to-r from-transparent via-primary/40 to-transparent rounded-full" />
 
-                <form onSubmit={handleSubmit(onSubmit)} className="relative z-10 p-8 lg:p-10 space-y-6" noValidate>
+                <form onSubmit={handleSubmit(onSubmit)} method="post" autoComplete="on" className="relative z-10 p-8 lg:p-10 space-y-6" noValidate>
                   <AnimatePresence mode="wait">
-                    {mounted && (
                       <motion.div variants={item}>
                         <Input
                           label="Email Address"
                           icon={FiMail}
                           error={errors.email?.message}
                           placeholder="you@company.com"
-                          autoComplete="email"
-                                                    {...register('email')}
+                          id="email"
+                          name="email"
+                          type="email"
+                          autoComplete="username"
+                          inputMode="email"
+                          {...register('email')}
                         />
                       </motion.div>
-                    )}
 
                     <motion.div variants={item}>
                       <Input
                         label="Password"
+                        id="password"
+                        name="password"
                         type={showPassword ? 'text' : 'password'}
                         icon={FiLock}
                         error={errors.password?.message}
@@ -363,7 +372,7 @@ export default function Login() {
                             <FiArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
                           </motion.div>
                         </span>
-                        {/* Button shine effect */}
+                        { }
                         <motion.div
                           className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent -translate-x-full"
                           animate={{ x: ['-100%', '200%'] }}
@@ -373,7 +382,7 @@ export default function Login() {
                     </motion.div>
                   </AnimatePresence>
 
-                  {/* Error State */}
+                  { }
                   {errors.form && (
                     <motion.div
                       initial={{ opacity: 0, y: -10, scale: 0.98 }}
@@ -389,7 +398,7 @@ export default function Login() {
                     </motion.div>
                   )}
 
-                  {/* Security Assurance */}
+                  { }
                   <motion.div
                     variants={item}
                     className="relative flex items-center justify-center gap-2.5 text-xs text-muted"
@@ -405,7 +414,7 @@ export default function Login() {
                     <span className="text-muted/60">End-to-end encrypted</span>
                   </motion.div>
 
-                  {/* Version Footer */}
+                  { }
                   <motion.div
                     variants={item}
                     className="mt-10 text-center text-xs text-muted/50"
@@ -415,7 +424,7 @@ export default function Login() {
                 </form>
               </div>
 
-              {/* Card reflection/shadow */}
+              { }
               <motion.div
                 className="absolute bottom-[-20px] left-1/2 -translate-x-1/2 w-3/4 h-20 rounded-full bg-gradient-to-r from-transparent via-slate-900/5 to-transparent blur-2xl"
                 initial={{ opacity: 0, scaleY: 0.5 }}

@@ -1,10 +1,10 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useEffect } from 'react'
 import { useViewState } from '@/hooks/useViewState'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, keepPreviousData } from '@tanstack/react-query'
 import {
   FiUsers, FiUserCheck, FiUserX, FiAlertCircle, FiCalendar, FiBarChart2,
-  FiLayers, FiGift, FiArrowRight, FiClock, FiPercent,
+  FiLayers, FiGift, FiArrowRight,
 } from 'react-icons/fi'
 import { attendanceApi } from '@/api/services'
 import {
@@ -15,20 +15,6 @@ import { STATUS_TONE, ATTENDANCE_STATUS } from './constants'
 import { formatDate } from '@/utils'
 import { useDebounce } from '@/hooks/useDebounce'
 
-// Phase 5.7 (Task 5) - Company Attendance Dashboard (Admin only).
-//
-// This is the ADMIN replacement for the personal attendance page. It contains
-// no Check In / Check Out / Working Hours / Break timer / personal history,
-// because an Admin is an oversight role and is exempt from marking attendance
-// (the server enforces that too - see attendanceService.assertMarksAttendance).
-//
-// Every figure below comes from endpoints that ALREADY existed:
-//   GET /api/attendance/stats     -> today's org-wide summary + dept/role splits
-//   GET /api/attendance/day       -> paginated, searchable, filterable records
-//   GET /api/attendance/holidays  -> upcoming holidays
-// No new API surface was introduced for this dashboard.
-
-// Management tooling is pinned to the TOP of the admin dashboard.
 const MANAGEMENT_LINKS = [
   { label: 'Monthly Report', hint: 'Org-wide attendance report', path: '/attendance/reports', icon: FiBarChart2, tone: 'primary' },
   { label: 'Shift Management', hint: 'Shifts, timings & grace', path: '/attendance/shifts', icon: FiLayers, tone: 'accent' },
@@ -40,30 +26,43 @@ const TONE_BG = {
   success: 'bg-success/10 text-success',
 }
 
-const todayISO = () => new Date().toISOString().slice(0, 10)
+const todayISO = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
 
 export function CompanyAttendanceDashboard() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
 
-  // Phase 5.7 (Task 7): persist search/department/status filters so Back
-  // restores them. Date deliberately resets to today on each fresh visit so
-  // a stale date never silently shows yesterday's data.
   const [params, , , setParams] = useViewState('company-att', {
     search: '', department: '', status: '', date: todayISO(), page: 1, limit: 10,
   })
+
+  useEffect(() => {
+    const status = searchParams.get('status')
+    const dateParam = searchParams.get('date')
+    if (status !== null) {
+      const decoded = decodeURIComponent(status)
+      if (ATTENDANCE_STATUS.includes(decoded) && decoded !== params.status) {
+        setParams((p) => ({ ...p, status: decoded, page: 1 }))
+      } else if (decoded === '' && params.status !== '') {
+        setParams((p) => ({ ...p, status: '', page: 1 }))
+      }
+    }
+    if (dateParam && dateParam !== params.date) {
+      setParams((p) => ({ ...p, date: dateParam, page: 1 }))
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams])
   const setParam = (patch) => setParams((p) => ({
     ...p, ...patch, page: 1,
     date: 'date' in patch ? patch.date : p.date,
   }))
   const debouncedSearch = useDebounce(params.search, 300)
 
-  // Org-wide summary for the selected date.
   const { data: stats, isLoading: statsLoading } = useQuery({
     queryKey: ['attendance-stats', params.date],
     queryFn: () => attendanceApi.stats({ date: params.date }),
   })
 
-  // Paginated, searchable org-wide records for the selected date.
   const { data, isLoading } = useQuery({
     queryKey: ['attendance-day', { ...params, search: debouncedSearch }],
     queryFn: () => attendanceApi.dayRecords({
@@ -84,8 +83,6 @@ export function CompanyAttendanceDashboard() {
 
   const rows = data?.data ?? []
 
-  // Department options are derived from the live summary rather than a
-  // hardcoded list, so a newly created department appears automatically.
   const departmentOptions = useMemo(() => ([
     { value: '', label: 'All Departments' },
     ...(stats?.byDepartment || [])
@@ -94,17 +91,6 @@ export function CompanyAttendanceDashboard() {
       .map((name) => ({ value: name, label: name })),
   ]), [stats])
 
-  // Phase 5.9.1 (hotfix) - CRASH: "TypeError: holidays is not iterable".
-  // ROOT CAUSE: attendanceApi.holidays.all pointed at GET /attendance/holidays,
-  // the LIST route, which returns a paginated envelope
-  // { data, total, page, limit, totalPages } - an OBJECT, not an array. The
-  // axios interceptor already unwraps response.data, so this component received
-  // that envelope directly. React Query's `data: holidays = []` default only
-  // applies when data is `undefined`, so the default never kicked in, and the
-  // spread `[...holidays]` threw - taking down the ENTIRE Admin Attendance page
-  // before a single tile could render.
-  // FIX: the endpoint is corrected in api/services.js (-> /all, a real array).
-  // This normalisation is defence in depth so either shape is now survivable.
   const upcomingHolidays = useMemo(() => {
     const list = Array.isArray(holidays) ? holidays : (holidays?.data ?? [])
     const from = todayISO()
@@ -141,7 +127,7 @@ export function CompanyAttendanceDashboard() {
 
   return (
     <div>
-      {/* Management tooling, pinned to the TOP (Task 5) */}
+      {}
       <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
         {MANAGEMENT_LINKS.map((q) => (
           <button key={q.path} onClick={() => navigate(q.path)} className="group text-left">
@@ -157,20 +143,18 @@ export function CompanyAttendanceDashboard() {
         ))}
       </div>
 
-      {/* Today's attendance summary */}
-      <div className="mb-4 grid grid-cols-2 gap-4 md:grid-cols-4 lg:grid-cols-7">
+      {}
+      <div className="mb-4 grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5">
         <StatCard label="Total Employees" value={stats?.totalEmployees ?? '-'} icon={FiUsers} />
         <StatCard label="Present" value={stats?.present ?? '-'} icon={FiUserCheck} tone="success" />
         <StatCard label="Absent" value={stats?.absent ?? '-'} icon={FiUserX} tone="danger" />
         <StatCard label="Late" value={stats?.late ?? '-'} icon={FiAlertCircle} tone="warning" />
         <StatCard label="On Leave" value={stats?.onLeave ?? '-'} icon={FiCalendar} />
-        <StatCard label="Early Exit" value={stats?.earlyExit ?? '-'} icon={FiClock} tone="accent" />
-        <StatCard label="Attendance Rate" value={stats ? `${stats.attendanceRate}%` : '-'} icon={FiPercent} tone="primary" />
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <div className="space-y-4 lg:col-span-2">
-          {/* Searchable, filterable org-wide attendance table */}
+          {}
           <Card>
             <CardHeader
               title="Company Attendance"
@@ -178,7 +162,7 @@ export function CompanyAttendanceDashboard() {
               action={<ExportMenu rows={rows} columns={exportColumns} filename="company-attendance" title="Company Attendance" />}
             />
 
-            {/* Quick filters */}
+            {}
             <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
               <SearchInput
                 value={params.search}
@@ -218,7 +202,7 @@ export function CompanyAttendanceDashboard() {
             </div>
           </Card>
 
-          {/* Department attendance */}
+          {}
           <Card>
             <CardHeader title="Department Attendance" subtitle="Present / late / absent by department" />
             <div className="space-y-3">
@@ -245,7 +229,7 @@ export function CompanyAttendanceDashboard() {
         </div>
 
         <div className="space-y-4">
-          {/* Role-wise attendance (Employees / HR / Managers) */}
+          {}
           <Card>
             <CardHeader title="Attendance by Role" subtitle="Employees, HR and Managers" />
             <div className="space-y-2">
@@ -266,7 +250,7 @@ export function CompanyAttendanceDashboard() {
             </div>
           </Card>
 
-          {/* Real-time status split */}
+          {}
           <Card>
             <CardHeader title="Status Breakdown" subtitle={isToday ? 'Live for today' : formatDate(params.date)} />
             <div className="space-y-2">
@@ -282,7 +266,7 @@ export function CompanyAttendanceDashboard() {
             </div>
           </Card>
 
-          {/* Upcoming holidays */}
+          {}
           <Card>
             <CardHeader title="Upcoming Holidays" action={<FiGift className="text-muted" />} />
             <div className="space-y-2">

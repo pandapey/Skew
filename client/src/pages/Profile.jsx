@@ -33,8 +33,6 @@ export default function Profile() {
   const emp = empData || {}
   const [tab, setTab] = useState('overview')
   const [editOpen, setEditOpen] = useState(false)
-  // Employees AND Managers may maintain their own Education/Bank details (the
-  // "My Profile self-service" surface); document uploads stay Employee-only.
   const canSelfEdit = user?.role === ROLES.EMPLOYEE || user?.role === ROLES.MANAGER
   const isEmployee = user?.role === ROLES.EMPLOYEE
 
@@ -148,16 +146,20 @@ export default function Profile() {
         <div className="space-y-4">
           {infoCard('Personal Information', personal)}
           {infoCard('Employment Information', employment)}
-          <EditableEducationCard
-            education={Array.isArray(emp.education) ? emp.education : []}
-            canEdit={canSelfEdit}
-            invalidate={() => queryClient.invalidateQueries({ queryKey: ['my-employee-profile'] })}
-          />
-          <EditableBankCard
-            bank={emp.bank || null}
-            canEdit={canSelfEdit}
-            invalidate={() => queryClient.invalidateQueries({ queryKey: ['my-employee-profile'] })}
-          />
+          {hasEmployeeRecord && (
+            <EditableEducationCard
+              education={Array.isArray(emp.education) ? emp.education : []}
+              canEdit={canSelfEdit}
+              invalidate={() => queryClient.invalidateQueries({ queryKey: ['my-employee-profile'] })}
+            />
+          )}
+          {hasEmployeeRecord && (
+            <EditableBankCard
+              bank={emp.bank || null}
+              canEdit={canSelfEdit}
+              invalidate={() => queryClient.invalidateQueries({ queryKey: ['my-employee-profile'] })}
+            />
+          )}
 
           {(emergencyContacts || flatEmergencyContact) && (
             <Card>
@@ -216,13 +218,6 @@ export default function Profile() {
   )
 }
 
-// EDUCATION + BANK self-service (Employee & Manager): these are the only
-// professional fields a profile owner maintains themselves. Both cards render
-// read-only for everyone, and an [Edit]/[Save]/[Cancel] flow appears for
-// Employee and Manager accounts. The save payload goes through the server's
-// updateSelf allowlist (education/bank), which sanitises the shape — rows
-// without qualification + institution are dropped, bank is reduced to its
-// three known keys.
 function EditableEducationCard({ education, canEdit, invalidate }) {
   const [editing, setEditing] = useState(false)
   const [rows, setRows] = useState(null)
@@ -254,7 +249,7 @@ function EditableEducationCard({ education, canEdit, invalidate }) {
       invalidate?.()
       setEditing(false)
     } catch {
-      // apiClient already toasts the server message
+
     } finally {
       setSaving(false)
     }
@@ -351,7 +346,7 @@ function EditableBankCard({ bank, canEdit, invalidate }) {
       invalidate?.()
       setEditing(false)
     } catch {
-      // apiClient already toasts the server message
+
     } finally {
       setSaving(false)
     }
@@ -403,21 +398,11 @@ function EditableBankCard({ bank, canEdit, invalidate }) {
   )
 }
 
-// PHASE: EMPLOYEE PROFILE SELF-SERVICE (TASK 3) — self-edit of personal fields
-// ONLY. The editable set mirrors the server's SELF_EDITABLE_FIELDS allowlist
-// (phone, address, dob, bloodGroup, maritalStatus, emergencyContact(s)): the
-// form never offers, and the server never accepts, anything that determines
-// employment (salary, department, designation, reporting, status, role).
-// Education + Bank are edited through their own sections below (shared by
-// Employee and Manager).
 function EditProfileModal({ open, onClose, emp, invalidate }) {
   const { user, patchUser } = useAuth()
   const [form, setForm] = useState(null)
   const [saving, setSaving] = useState(false)
 
-  // Preload from the employee record the first time the modal opens (the record
-  // is re-fetched by react-query anyway after a save, so we never need to
-  // re-seed while open).
   if (open && form === null) {
     setForm({
       phone: emp.phone ?? user?.phone ?? '',
@@ -453,7 +438,7 @@ function EditProfileModal({ open, onClose, emp, invalidate }) {
         emergencyContact: contacts.length === 1 ? contacts[0].name : (contacts.length ? undefined : null),
         emergencyContacts: contacts.length > 1 ? contacts : (contacts.length ? undefined : null),
       })
-      // Keep the Redux auth copy in sync so the header/profile fallbacks agree.
+
       if (updated) {
         patchUser({ phone: updated.phone ?? form.phone.trim() })
       }
@@ -461,7 +446,7 @@ function EditProfileModal({ open, onClose, emp, invalidate }) {
       invalidate?.()
       onClose()
     } catch {
-      // apiClient already toasts the server message
+
     } finally {
       setSaving(false)
     }
@@ -528,10 +513,6 @@ function EditProfileModal({ open, onClose, emp, invalidate }) {
   )
 }
 
-// PHASE: EMPLOYEE PROFILE SELF-SERVICE (TASK 3) — the logged-in Employee's own
-// private documents (ID / address proof, certificates…). Uploaded to the
-// private profile-uploads/ store and served only through the authorized
-// /employees/me/documents routes — never through a public URL.
 function DocumentsSection({ documents, onOpen, invalidate }) {
   const fileRef = useRef(null)
   const [uploading, setUploading] = useState(false)
@@ -545,7 +526,7 @@ function DocumentsSection({ documents, onOpen, invalidate }) {
       toast.success('Document uploaded')
       invalidate?.()
     } catch {
-      // apiClient already toasts the server message
+
     } finally {
       setUploading(false)
       if (fileRef.current) fileRef.current.value = ''
@@ -560,7 +541,7 @@ function DocumentsSection({ documents, onOpen, invalidate }) {
       toast.success('Document deleted')
       invalidate?.()
     } catch {
-      // apiClient already toasts the server message
+
     } finally {
       setDeleting(null)
     }

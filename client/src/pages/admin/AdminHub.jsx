@@ -30,21 +30,13 @@ export default function AdminHub() {
     <div>
       <PageHeader title="Admin Console" subtitle="Users, roles, plans, security, system health and platform configuration." />
 
-      {/* KPIs */}
-      <div className="mb-4 grid grid-cols-2 gap-4 lg:grid-cols-4">
+      {}
+      <div className="mb-4 grid grid-cols-2 gap-4 lg:grid-cols-2">
         <StatCard label="Total Users" value={stats.totalUsers} icon={FiUsers} />
-        <StatCard label="Active Sessions" value={stats.liveSessions} icon={FiActivity} tone="warning" />
-        <StatCard label="API Keys" value={stats.activeApiKeys} icon={FiKey} tone="success" />
         <StatCard label="Roles" value={stats.totalRoles} icon={FiShield} tone="accent" />
       </div>
-      <div className="mb-4 grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard label="Audit Events" value={stats.auditCount} icon={FiFileText} />
-        <StatCard label="System Errors" value={stats.systemErrors} icon={FiServer} tone="danger" />
-        <StatCard label="DB Latency" value={`${stats.dbLatency}ms`} icon={FiDatabase} tone="success" />
-        <StatCard label="Last Backup" value={stats.lastBackup.replace(' 0', ' ')} icon={FiServer} tone="accent" />
-      </div>
 
-      {/* Charts */}
+      {}
       <div className="mb-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-2">
           <CardHeader title="User Growth" subtitle="Registered accounts over time" />
@@ -56,7 +48,7 @@ export default function AdminHub() {
         </Card>
       </div>
 
-      {/* Storage + sections */}
+      {}
       <div className="mb-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-1">
           <CardHeader title="Database Storage" />

@@ -11,7 +11,7 @@ import {
 import {
   Client, ClientProject, ClientAnnouncement, ClientMessage, ClientNotification,
 
-  Plan,
+  Plan, DomainPlan,
 } from './models/clientModels.js'
 import { Attendance, Shift, Holiday } from './models/attendanceModels.js'
 import { LeaveType, LeaveBalance, LeaveRequest } from './models/leaveModels.js'
@@ -235,6 +235,16 @@ async function seed() {
   const planDocs = await Plan.insertMany(planCatalogue.map((p) => ({ ...p, status: 'Active' })))
   const planNames = planDocs.map((p) => p.name)
   console.log(` Seeded ${planDocs.length} plans`)
+
+  await DomainPlan.deleteMany({})
+  const domainPlanCatalogue = [
+    { name: 'Basic', code: 'BASC', price: 1999, description: 'Single domain, basic DNS and email forwarding.' },
+    { name: 'Standard', code: 'STND', price: 4999, description: 'Up to 5 domains, premium DNS and SSL.' },
+    { name: 'Premium', code: 'PREM', price: 9999, description: 'Up to 20 domains, advanced security and monitoring.' },
+    { name: 'Enterprise', code: 'ENTP', price: 19999, description: 'Unlimited domains, dedicated support and compliance.' },
+  ]
+  const domainPlanDocs = await DomainPlan.insertMany(domainPlanCatalogue.map((p) => ({ ...p, status: 'Active' })))
+  console.log(` Seeded ${domainPlanDocs.length} domain plans`)
 
   await Promise.all([
     Client.deleteMany({}), ClientProject.deleteMany({}),

@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { cn, initials, colorFromString } from '@/utils'
 
 function resolveSrc(src) {
@@ -19,12 +20,17 @@ export function Avatar({ name = '', src, size = 40, className, ring = true }) {
   const dimension = { width: size, height: size }
   const ringCls = ring ? 'ring-2 ring-white/40 dark:ring-white/10' : ''
   const resolved = resolveSrc(src)
-  if (resolved) {
+  const [failed, setFailed] = useState(false)
+  useEffect(() => { setFailed(false) }, [resolved])
+  if (resolved && !failed) {
     return (
       <img
         src={resolved}
         alt={name}
         style={dimension}
+        loading="lazy"
+        referrerPolicy="no-referrer"
+        onError={() => setFailed(true)}
         className={cn('rounded-full object-cover shadow-floating-sm', ringCls, className)}
       />
     )

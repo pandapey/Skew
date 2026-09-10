@@ -5,7 +5,10 @@ const opts = { timestamps: true }
 
 const versionSchema = new Schema({
   version: { type: Number, default: 1 },
+  // GridFS file _id (24-hex string). Legacy: Drive fileId or local disk filename.
   filename: String,
+  fileId: { type: String, default: null, index: true },
+  contentType: String,
   size: Number,
   by: String,
   uploadedAt: { type: Date, default: Date.now },
@@ -29,7 +32,12 @@ const fileSchema = new Schema({
   name: { type: String, required: true, trim: true, index: true },
   originalName: String,
   mimeType: String,
+  // MongoDB Atlas (GridFS) storage — bytes only. `url` holds the GridFS file _id
+  // for new files. Legacy Drive IDs / `/uploads/...` paths may still exist on old docs.
   url: { type: String, default: '' },
+  fileId: { type: String, default: null, index: true },
+  contentType: String,
+  storage: { type: String, enum: ['gridfs', 'legacy'], default: 'gridfs' },
   type: { type: String, enum: ['image', 'video', 'pdf', 'excel', 'word', 'other'], default: 'other', index: true },
   size: { type: Number, default: 0 },
   source: { type: String, enum: ['files', 'chat'], default: 'files', index: true },

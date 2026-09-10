@@ -116,6 +116,9 @@ const documentSchema = new mongoose.Schema(
     uploadedBy: { type: String, default: '' },
     uploadedAt: { type: String, default: '' },
     url: { type: String, default: '' },
+    fileId: { type: String, default: null },
+    contentType: { type: String, default: '' },
+    storage: { type: String, enum: ['gridfs', 'legacy'], default: 'gridfs' },
   },
   { _id: true }
 )

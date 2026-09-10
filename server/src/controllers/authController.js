@@ -83,17 +83,35 @@ export async function me(req, res) {
 
 export async function updateAvatar(req, res) {
   if (!req.file) return res.status(400).json({ message: 'No image uploaded' })
-  let avatar = null
-  if (process.env.GOOGLE_DRIVE_FOLDER_ID && req.file.buffer) {
-    const uploaded = await uploadToDrive({ buffer: req.file.buffer, originalname: req.file.originalname, mimetype: req.file.mimetype })
-    avatar = uploaded.id
-  } else {
+  const saveLocal = () => {
     const safe = req.file.originalname.replace(/[^a-zA-Z0-9.\-_]/g, '_')
     const filename = `${Date.now()}-${safe}`
     const dest = path.join(process.cwd(), 'uploads', filename)
     if (!fs.existsSync(path.dirname(dest))) fs.mkdirSync(path.dirname(dest), { recursive: true })
     fs.writeFileSync(dest, req.file.buffer)
-    avatar = `/uploads/${filename}`
+    return `/uploads/${filename}`
+  }
+  let avatar = null
+  if (process.env.GOOGLE_DRIVE_FOLDER_ID && req.file.buffer) {
+    try {
+      const uploaded = await uploadToDrive({ buffer: req.file.buffer, originalname: req.file.originalname, mimetype: req.file.mimetype })
+      avatar = uploaded.id
+    } catch (err) {
+      // Drive token expired / quota / network — fall back to local disk
+      // so profile upload never hard-fails in production.
+      console.error('[avatar] Drive upload failed, falling back to local:', err?.message || err)
+      try {
+        avatar = saveLocal()
+      } catch (fallbackErr) {
+        return res.status(500).json({ message: 'Avatar upload failed. Please retry.' })
+      }
+    }
+  } else {
+    try {
+      avatar = saveLocal()
+    } catch {
+      return res.status(500).json({ message: 'Avatar upload failed. Please retry.' })
+    }
   }
   req.user.avatar = avatar
   await req.user.save({ validateBeforeSave: false })

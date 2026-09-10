@@ -1,41 +1,9 @@
 import dayjs from 'dayjs'
 import { FiChevronLeft, FiChevronRight } from 'react-icons/fi'
 import { Card, CardHeader, Button } from '@/components/ui'
-import { CALENDAR_TONE } from './constants'
+import { CALENDAR_TONE, WEEKLY_OFF_DAY } from './constants'
 
-// ---------------------------------------------------------------------------
-// PHASE 6 (TASK 3) - MONTH NAVIGATION
-// ---------------------------------------------------------------------------
-// ROOT CAUSE of "the calendar opens on July 2026 and never updates":
-//
-//   const [current, setCurrent] = useState(dayjs('2026-07-15'))
-//
-// The month was a HARD-CODED DATE LITERAL, so the calendar always opened on
-// July 2026 no matter what today is. It was also component-local state, so the
-// page above it had no idea which month was on screen and could not scope its
-// attendance query to it - the < and > buttons only ever moved the grid while
-// the data underneath stayed whatever the one unscoped request had returned.
-//
-// FIX: the month is a CONTROLLED value owned by the page
-// (pages/Attendance.jsx), which seeds it from dayjs() - the same "start on
-// today" rule features/calendar/CalendarApp.jsx uses (`useState(() => dayjs())`)
-// - and uses it in the React Query key AND in the request params. This
-// component only renders and raises change events, exactly like MonthView does
-// for the main Calendar. No second calendar engine and no second date library:
-// dayjs is the one this project already uses everywhere.
-//
-// `current` / `onChange` are optional so any other caller keeps working: with
-// no props it falls back to the CURRENT month (never a literal).
-// ---------------------------------------------------------------------------
-
-// `calendar` = { 'YYYY-MM-DD': status }, `holidays` = [{ date, name }].
 export function AttendanceCalendar({ calendar = {}, holidays = [], current, onChange }) {
-  // dayjs() is local time, and every key below is produced with
-  // .format('YYYY-MM-DD') from that same local value, so a day cell and the
-  // date string it looks up in `calendar` can never disagree by a timezone
-  // offset. The server stores and compares the identical plain 'YYYY-MM-DD'
-  // strings (Attendance.date), so no Date object is built on either side of a
-  // month boundary - which is exactly why 2026-08-01 cannot become 2026-07-31.
   const month = current || dayjs()
   const holidayMap = Object.fromEntries(holidays.map((h) => [String(h.date).slice(0, 10), h.name]))
 
@@ -51,27 +19,6 @@ export function AttendanceCalendar({ calendar = {}, holidays = [], current, onCh
 
   const go = (next) => onChange?.(next)
 
-  // PHASE SALARY/PROJECT AUDIT (ATTENDANCE BUG 1) — SATURDAY SHOWN AS A
-  // WEEKEND WHILE PAYROLL CHARGES IT AS A WORKING DAY.
-  //
-  // ROOT CAUSE: this cell test was `wd === 0 || wd === 6`, a hardcoded two-day
-  // weekend that exists nowhere else in the system. The company's actual rule
-  // lives in server/src/utils/leaveDays.js and is SUNDAY ONLY — its own header
-  // says so, `countWorkingDays()` skips only `SUNDAY`, `resolveLeaveDuration()`
-  // rejects only Sundays, and meetingRules.meetingDateRejection() blocks only
-  // Sundays. attendanceService.mySummary() derives the payroll denominator from
-  // that same helper.
-  //
-  // So an employee looking at this calendar saw every Saturday greyed out as a
-  // non-working day, while payroll counted that Saturday as a working day and —
-  // if they had not checked in — charged it as an unpaid loss-of-pay day. The
-  // calendar and the payslip disagreed about the same date.
-  //
-  // FIX: one weekly off (Sunday), matching the single source of truth. The tone
-  // key stays 'Weekend' so features/attendance/constants.js CALENDAR_TONE and
-  // every other consumer are untouched; only the label shown to the user is
-  // corrected to "Weekly Off", which is what it actually is.
-  const WEEKLY_OFF_DAY = 0 // Sunday — mirrors SUNDAY in server/src/utils/leaveDays.js
   const statusFor = (dateStr, day) => {
     if (holidayMap[dateStr]) return 'Holiday'
     if (calendar[dateStr]) return calendar[dateStr]
@@ -89,9 +36,6 @@ export function AttendanceCalendar({ calendar = {}, holidays = [], current, onCh
         subtitle={month.format('MMMM YYYY')}
         action={
           <div className="flex items-center gap-1">
-            {/* "Today" mirrors the main Calendar's toolbar button
-                (CalendarApp.jsx: onClick={() => setCurrent(dayjs())}). Hidden
-                while already on this month so it is never a dead control. */}
             {!isCurrentMonth && (
               <Button size="sm" variant="ghost" onClick={() => go(dayjs().startOf('month'))}>Today</Button>
             )}

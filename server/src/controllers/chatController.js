@@ -129,10 +129,13 @@ export const uploadAttachment = asyncHandler(async (req, res) =>
 
 export const downloadAttachment = asyncHandler(async (req, res) => {
   const result = await svc.getChatAttachment(req.user._id, req.params.id, req.params.fileId)
-  if (result.isDrive) {
-    const { driveDownload } = await import('../utils/driveUpload.js')
-    res.setHeader('Content-Disposition', `attachment; filename="${result.name}"`)
-    return driveDownload(result.driveId, res)
+  if (result.isGridFS) {
+    const { streamGridFSFile } = await import('../utils/mongoStorage.js')
+    return streamGridFSFile(result.gridFsId, res, {
+      filename: result.name,
+      contentType: result.mimeType,
+      disposition: 'attachment',
+    })
   }
   res.download(result.absPath, result.name)
 })

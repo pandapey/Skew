@@ -12,6 +12,7 @@ import { User } from '../models/User.js'
 import { notifyUsersByName } from './notificationService.js'
 import { emitToClient } from '../realtime/index.js'
 import { buildProjectTeam } from '../utils/team.js'
+import { saveBufferToGridFS, deleteGridFSFile, isGridFsId } from '../utils/mongoStorage.js'
 
 export const withId = (doc) => (doc ? { ...doc, id: String(doc._id) } : doc)
 export const withIds = (docs) => docs.map(withId)
@@ -418,6 +419,7 @@ export const projectService = {
     const task = await ProjectTask.findById(id)
     if (!task) throw new ApiError(404, 'Task not found')
     if (!file) throw new ApiError(400, 'No file uploaded')
+    if (!file.buffer) throw new ApiError(400, 'No file uploaded')
 
     const project = await Project.findById(task.project).lean()
     const canAttach =
@@ -434,14 +436,27 @@ export const projectService = {
         : file.mimetype.startsWith('audio/')
           ? 'audio'
           : 'file'
+    // MongoDB Atlas only — bytes in GridFS.
+    const gridFsId = await saveBufferToGridFS(file.buffer, {
+      filename: file.originalname,
+      contentType: file.mimetype,
+      metadata: { kind: 'task-attachment', project: String(task.project), task: String(task._id) },
+    })
     const record = await ProjectFile.create({
       project: task.project,
       name: file.originalname,
       type: kind,
       size: file.size,
-      url: `/uploads/${file.filename}`,
+      url: `/project/files/${'__ID__'}/download`,
+      fileId: gridFsId,
+      mimeType: file.mimetype,
+      contentType: file.mimetype,
+      storage: 'gridfs',
       uploadedBy: user?.name || 'System',
     })
+    // fill in real download url now that we know the ProjectFile id
+    record.url = `/project/files/${String(record._id)}/download`
+    await record.save()
     const attachment = {
       fileId: record._id,
       name: record.name,
@@ -1114,7 +1129,11 @@ export const projectService = {
   ),
 
   async addFile(body, actor) {
-    const file = await ProjectFile.create({ ...body, uploadedBy: actor || body.uploadedBy })
+    // Metadata-only entries (no bytes) are stored as legacy placeholders.
+    // Real uploads go through GridFS paths (task attachments / documents).
+    const doc = { ...body, uploadedBy: actor || body.uploadedBy }
+    if (!doc.fileId) doc.storage = 'legacy'
+    const file = await ProjectFile.create(doc)
     await logActivity(body.project, file.uploadedBy, `uploaded ${file.name}`, file.name)
     return withId(file.toObject())
   },

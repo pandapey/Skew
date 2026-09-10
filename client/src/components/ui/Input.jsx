@@ -207,6 +207,11 @@ export const Select = forwardRef(function Select(
                 <FiSearch className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted" />
                 <input
                   ref={searchRef}
+                  id={`${selectId}-search`}
+                  name={`${selectId}-search`}
+                  type="search"
+                  autoComplete="off"
+                  aria-label="Search options"
                   value={q}
                   onChange={(e) => { setQ(e.target.value); setActive(0) }}
                   onKeyDown={onKeyDown}

@@ -5,14 +5,9 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { cn } from '@/utils'
 import { useAnchoredPopover } from './useAnchoredPopover'
 
-// Premium multi-select. Same glass look & feel as the shared <Select>, but
-// returns an array of values via onChange. Each option may carry a `meta` line
-// (e.g. "EMP-1004 \u00b7 Engineering \u00b7 Software Developer") shown under the
-// label. Fully searchable, keyboard-navigable and theme-aware (light/dark).
-// Reused across the app so every multi-select stays visually consistent.
 export const MultiSelect = forwardRef(function MultiSelect(
   { label, error, options = [], value, onChange, className, placeholder = 'Select\u2026', disabled, loading, emptyText = 'No results', searchable, singleSelect = false, ...props },
-  ref // eslint-disable-line no-unused-vars
+  ref
 ) {
   const searchRef = useRef(null)
   const [open, setOpen] = useState(false)
@@ -40,7 +35,7 @@ export const MultiSelect = forwardRef(function MultiSelect(
 
   const toggle = (v) => {
     if (singleSelect) {
-      // Single-select mode: replace selection and close dropdown
+
       const next = isSel(v) ? [] : [v]
       onChange?.(next)
       setOpen(false)
@@ -54,8 +49,6 @@ export const MultiSelect = forwardRef(function MultiSelect(
     onChange?.(selected.filter((s) => String(s) !== String(v)))
   }
 
-  // Phase 6.23 (TASK 1): same shared portal/positioning primitive as the
-  // Dropdown and the single-value Select - see useAnchoredPopover.js.
   const closeMenu = useCallback(() => setOpen(false), [])
   const { rootRef, anchorRef, popoverRef, style: menuStyle } = useAnchoredPopover({
     open: open && !disabled,
@@ -85,10 +78,6 @@ export const MultiSelect = forwardRef(function MultiSelect(
         ref={anchorRef}
         type="button"
         disabled={disabled}
-        // BUGFIX: a Select/MultiSelect is often rendered inside a clickable
-        // row, card or tile. Letting the opening click bubble fired that
-        // ancestor handler too (navigate / open a modal / re-render), which
-        // tore the listbox down again right after it appeared.
         onPointerDown={(e) => e.stopPropagation()}
         onMouseDown={(e) => e.stopPropagation()}
         onClick={(e) => { e.stopPropagation(); if (!disabled && !loading) setOpen((o) => !o) }}
@@ -141,8 +130,6 @@ export const MultiSelect = forwardRef(function MultiSelect(
             transition={{ duration: 0.14, ease: [0.22, 1, 0.36, 1] }}
             role="listbox"
             aria-multiselectable="true"
-            // The listbox is portalled into <body>, but React still bubbles its
-            // synthetic events to this component's React ancestors. Keep them in.
             onPointerDown={(e) => e.stopPropagation()}
             onMouseDown={(e) => e.stopPropagation()}
             onClick={(e) => e.stopPropagation()}
@@ -153,10 +140,15 @@ export const MultiSelect = forwardRef(function MultiSelect(
                 <FiSearch className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted" />
                 <input
                   ref={searchRef}
+                  id="multiselect-search"
+                  name="multiselect-search"
+                  type="search"
+                  autoComplete="off"
+                  aria-label="Search options"
                   value={q}
                   onChange={(e) => { setQ(e.target.value); setActive(0) }}
                   onKeyDown={onKeyDown}
-                  placeholder="Search\u2026"
+                  placeholder="Search…"
                   className="w-full rounded-lg border border-app bg-transparent py-1.5 pl-8 pr-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
                 />
               </div>

@@ -1,4 +1,3 @@
-import path from 'path'
 import { Router } from 'express'
 import { Project, Sprint, Milestone, ProjectFile, ProjectActivity } from '../models/projectModels.js'
 import { createResourceService } from '../services/resourceFactory.js'
@@ -130,20 +129,36 @@ router.get('/:id/documents', asyncHandler(async (req, res) => {
 router.post('/:id/documents', upload.single('file'), asyncHandler(async (req, res) => {
   const { project, cp } = await loadSharedDocumentStore(req)
   if (!req.file) throw new ApiError(400, 'No file uploaded')
+  if (!req.file.buffer) throw new ApiError(400, 'No file uploaded')
   const uploader = req.user?.name || 'Staff'
+  const { saveBufferToGridFS } = await import('../utils/mongoStorage.js')
+  // MongoDB Atlas only — bytes in GridFS.
+  const gridFsId = await saveBufferToGridFS(req.file.buffer, {
+    filename: req.file.originalname,
+    contentType: req.file.mimetype,
+    metadata: { kind: 'project-document', project: String(project._id) },
+  })
   const doc = {
     name: req.file.originalname,
     type: String(req.body?.category || 'Other'),
     size: `${(req.file.size / 1024).toFixed(1)} KB`,
     uploadedBy: uploader,
     uploadedAt: new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }),
-    url: `/uploads/${req.file.filename}`,
+    url: '',
+    fileId: gridFsId,
   }
   // Opt2: store in ProjectFile (source of truth) + mirror to legacy for portal compat if exists
   const fileDoc = await ProjectFile.create({
     project: project._id,
-    name: doc.name, type: doc.type.toLowerCase(), size: req.file.size, url: doc.url, uploadedBy: uploader
+    name: doc.name, type: doc.type.toLowerCase(), size: req.file.size,
+    url: '', fileId: gridFsId, mimeType: req.file.mimetype, contentType: req.file.mimetype,
+    storage: 'gridfs', uploadedBy: uploader,
   }).catch(()=>null)
+  if (fileDoc) {
+    fileDoc.url = `/project/files/${String(fileDoc._id)}/download`
+    await fileDoc.save().catch(()=>{})
+    doc.url = fileDoc.url
+  }
   await ProjectActivity.create({ project: project._id, actor: uploader, action: `uploaded document "${doc.name}"`, target: doc.name }).catch(()=>{})
   if (cp) {
     cp.documents.push(doc)
@@ -175,6 +190,8 @@ router.delete('/:id/documents/:docId', asyncHandler(async (req, res) => {
   if (pf) {
     const privileged = PROJECT_FULL_ACCESS.includes(req.user?.role)
     if (!privileged && pf.uploadedBy !== (req.user?.name || '')) throw new ApiError(403, 'You can only delete documents you uploaded')
+    const { deleteGridFSFile, isGridFsId } = await import('../utils/mongoStorage.js')
+    if (pf.fileId && isGridFsId(pf.fileId)) await deleteGridFSFile(pf.fileId)
     await pf.deleteOne()
     if (cp) {
       const legacyDoc = cp.documents.id(req.params.docId)
@@ -201,15 +218,79 @@ router.delete('/:id/documents/:docId', asyncHandler(async (req, res) => {
 
 router.get('/:id/documents/:docId/download', asyncHandler(async (req, res) => {
   const { project, cp } = await loadSharedDocumentStore(req, { lean: true })
-  // Try ProjectFile first
-  let doc = null
-  try { const pf = await ProjectFile.findOne({ _id: req.params.docId, project: project._id }).lean(); if (pf) doc = pf } catch {}
-  if (!doc && cp) doc = (cp.documents || []).find((d) => String(d._id) === req.params.docId)
-  if (!doc) throw new ApiError(404, 'Document not found')
-  const uploadsRoot = path.resolve(process.cwd(), 'uploads')
-  const abs = path.resolve(process.cwd(), '.' + doc.url)
-  if (!abs.startsWith(uploadsRoot)) throw new ApiError(400, 'Invalid file path')
-  res.download(abs, doc.name)
+  // Try ProjectFile first (GridFS)
+  try {
+    const pf = await ProjectFile.findOne({ _id: req.params.docId, project: project._id }).lean()
+    if (pf) {
+      const { streamGridFSFile, isGridFsId } = await import('../utils/mongoStorage.js')
+      const gid = pf.fileId && isGridFsId(pf.fileId) ? pf.fileId : null
+      if (gid) {
+        return streamGridFSFile(gid, res, {
+          filename: pf.name,
+          contentType: pf.contentType || pf.mimeType,
+          disposition: 'attachment',
+        })
+      }
+      // legacy disk fallback
+      if (pf.url && String(pf.url).startsWith('/uploads/')) {
+        const path = await import('path')
+        const fs = await import('fs')
+        const abs = path.resolve(process.cwd(), `.${pf.url}`)
+        const root = path.resolve(process.cwd(), 'uploads')
+        if (!abs.startsWith(root)) throw new ApiError(400, 'Invalid file path')
+        return res.download(abs, pf.name)
+      }
+      throw new ApiError(410, 'This file was stored outside MongoDB. Please re-upload it.')
+    }
+  } catch (e) {
+    if (e?.statusCode) throw e
+  }
+  if (cp) {
+    const legacy = (cp.documents || []).find((d) => String(d._id) === req.params.docId)
+    if (legacy) {
+      // legacy embedded docs had no binary store of their own — check for GridFS ref
+      const { streamGridFSFile, isGridFsId } = await import('../utils/mongoStorage.js')
+      if (legacy.fileId && isGridFsId(legacy.fileId)) {
+        return streamGridFSFile(legacy.fileId, res, { filename: legacy.name, disposition: 'attachment' })
+      }
+      if (legacy.url && String(legacy.url).startsWith('/project/files/')) {
+        const m = String(legacy.url).match(/\/project\/files\/([0-9a-fA-F]{24})\/download/)
+        if (m) {
+          const pf2 = await ProjectFile.findById(m[1]).lean()
+          if (pf2?.fileId && isGridFsId(pf2.fileId)) {
+            return streamGridFSFile(pf2.fileId, res, { filename: pf2.name, contentType: pf2.contentType, disposition: 'attachment' })
+          }
+        }
+      }
+    }
+  }
+  throw new ApiError(404, 'Document not found')
+}))
+
+// Direct GridFS download for any ProjectFile (used by task attachments + doc urls)
+router.get('/files/:fileId/download', asyncHandler(async (req, res) => {
+  const pf = await ProjectFile.findById(req.params.fileId).lean()
+  if (!pf) throw new ApiError(404, 'File not found')
+  // access check: must have project access
+  const { resolveProjectRef, hasProjectAccess } = await import('../services/projectService.js')
+  const project = await resolveProjectRef(String(pf.project))
+  if (!project || !(await hasProjectAccess(project, req.user))) throw new ApiError(403, 'No access to this project')
+  const { streamGridFSFile, isGridFsId } = await import('../utils/mongoStorage.js')
+  if (pf.fileId && isGridFsId(pf.fileId)) {
+    return streamGridFSFile(pf.fileId, res, {
+      filename: pf.name,
+      contentType: pf.contentType || pf.mimeType,
+      disposition: 'attachment',
+    })
+  }
+  if (pf.url && String(pf.url).startsWith('/uploads/')) {
+    const path = await import('path')
+    const abs = path.resolve(process.cwd(), `.${pf.url}`)
+    const root = path.resolve(process.cwd(), 'uploads')
+    if (!abs.startsWith(root)) throw new ApiError(400, 'Invalid file path')
+    return res.download(abs, pf.name)
+  }
+  throw new ApiError(410, 'This file was stored outside MongoDB. Please re-upload it.')
 }))
 
 router.get('/:id/detail', asyncHandler(async (req, res) => res.json(await svc.detail(req.params.id, req.user))))

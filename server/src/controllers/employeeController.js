@@ -1,7 +1,15 @@
 import { employeeService as svc } from '../services/employeeService.js'
 import { asyncHandler } from '../utils/asyncHandler.js'
+import { saveBufferToGridFS, streamGridFSFile } from '../utils/mongoStorage.js'
+import fs from 'fs'
+import path from 'path'
 
-// Thin controller: parse request → call service → shape response.
+const legacyProfilePath = (diskName) => {
+  const abs = path.resolve(process.cwd(), 'profile-uploads', String(diskName || ''))
+  if (!abs.startsWith(path.resolve(process.cwd(), 'profile-uploads'))) return null
+  return abs
+}
+
 export const employeeController = {
   list: asyncHandler(async (req, res) => {
     const result = await svc.list(req.query)
@@ -12,11 +20,6 @@ export const employeeController = {
     res.json(await svc.stats())
   }),
 
-  // Phase 9 (My Profile): returns ONLY the caller's own Employee record. The
-  // record is resolved from req.user (the JWT identity) — there is no :id in
-  // the path, so an employee can never read another person's profile by
-  // changing a URL or request body. Admin/Manager can still view any profile
-  // through the existing /employees/:id detail endpoint.
   myProfile: asyncHandler(async (req, res) => {
     const emp = await svc.getSelf(req.user)
     if (!emp) {
@@ -47,28 +50,55 @@ export const employeeController = {
 
   uploadPhoto: asyncHandler(async (req, res) => {
     if (!req.file) return res.status(400).json({ message: 'No photo uploaded' })
-    res.status(201).json(await svc.setPhoto(req.params.id, `/uploads/${req.file.filename}`))
+    if (!req.file.buffer) return res.status(400).json({ message: 'Photo upload failed' })
+    // MongoDB Atlas only — photo bytes in GridFS, avatar stores the GridFS id.
+    const gridFsId = await saveBufferToGridFS(req.file.buffer, {
+      filename: req.file.originalname,
+      contentType: req.file.mimetype,
+      metadata: { kind: 'employee-photo', employee: req.params.id },
+    })
+    res.status(201).json(await svc.setPhoto(req.params.id, gridFsId))
   }),
 
   uploadDocument: asyncHandler(async (req, res) => {
     if (!req.file) return res.status(400).json({ message: 'No document uploaded' })
+    if (!req.file.buffer) return res.status(400).json({ message: 'Document upload failed' })
     const type = req.file.mimetype.includes('pdf') ? 'pdf'
       : /sheet|excel/.test(req.file.mimetype) ? 'excel'
       : req.file.mimetype.includes('image') ? 'image' : 'word'
+    // MongoDB Atlas only — document bytes in GridFS.
+    const gridFsId = await saveBufferToGridFS(req.file.buffer, {
+      filename: req.file.originalname,
+      contentType: req.file.mimetype,
+      metadata: { kind: 'employee-doc', employee: req.params.id },
+    })
     const doc = await svc.addDocument(req.params.id, {
       name: req.file.originalname,
       type,
       category: req.body.category || 'General',
       size: req.file.size,
-      url: `/uploads/${req.file.filename}`,
+      mimeType: req.file.mimetype,
+      contentType: req.file.mimetype,
+      diskName: gridFsId,
+      fileId: gridFsId,
+      storage: 'gridfs',
+      url: `/employees/${req.params.id}/documents/`,
     })
-    res.status(201).json(doc)
+    // fix url to real API path now that we know the subdoc id
+    const realUrl = `/employees/${req.params.id}/documents/${String(doc._id)}`
+    try {
+      const { Employee } = await import('../models/Employee.js')
+      const parent = await Employee.findOne({ 'documents._id': doc._id })
+      if (parent) {
+        await Employee.updateOne(
+          { _id: parent._id, 'documents._id': doc._id },
+          { $set: { 'documents.$.url': realUrl } },
+        )
+      }
+    } catch {}
+    res.status(201).json({ ...(doc.toObject ? doc.toObject() : doc), url: realUrl })
   }),
 
-  // PHASE: EMPLOYEE PROFILE SELF-SERVICE (TASK 3) — self-edit + private docs.
-  // The target Employee is ALWAYS derived from req.user (the JWT), never from
-  // a client-supplied id, so an employee can only ever edit/read their own
-  // record and can never act on behalf of another employee.
   updateSelf: asyncHandler(async (req, res) => {
     res.json(await svc.updateSelf(req.user, req.body || {}))
   }),
@@ -80,20 +110,36 @@ export const employeeController = {
   }),
 
   downloadSelfDocument: asyncHandler(async (req, res) => {
-    const { absPath, name, mimeType } = await svc.getSelfDocument(req.user, req.params.docId)
-    res.setHeader('Content-Type', mimeType || 'application/octet-stream')
-    res.download(absPath, name)
+    const result = await svc.getSelfDocument(req.user, req.params.docId)
+    if (result.isGridFS) {
+      return streamGridFSFile(result.gridFsId, res, {
+        filename: result.name,
+        contentType: result.mimeType,
+        disposition: 'attachment',
+      })
+    }
+    const abs = legacyProfilePath(result.legacyDiskName)
+    if (!abs || !fs.existsSync(abs)) return res.status(404).json({ message: 'Document not found' })
+    res.setHeader('Content-Type', result.mimeType || 'application/octet-stream')
+    res.download(abs, result.name)
   }),
 
   deleteSelfDocument: asyncHandler(async (req, res) => {
     res.json(await svc.deleteSelfDocument(req.user, req.params.docId))
   }),
 
-  // Admin/Manager door onto a private employee document (normal
-  // employee-management permission — the route is canWrite-guarded).
   downloadDocument: asyncHandler(async (req, res) => {
-    const { absPath, name, mimeType } = await svc.getDocumentFor(req.user, req.params.id, req.params.docId)
-    res.setHeader('Content-Type', mimeType || 'application/octet-stream')
-    res.download(absPath, name)
+    const result = await svc.getDocumentFor(req.user, req.params.id, req.params.docId)
+    if (result.isGridFS) {
+      return streamGridFSFile(result.gridFsId, res, {
+        filename: result.name,
+        contentType: result.mimeType,
+        disposition: 'attachment',
+      })
+    }
+    const abs = legacyProfilePath(result.legacyDiskName)
+    if (!abs || !fs.existsSync(abs)) return res.status(404).json({ message: 'Document not found' })
+    res.setHeader('Content-Type', result.mimeType || 'application/octet-stream')
+    res.download(abs, result.name)
   }),
 }

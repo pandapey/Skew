@@ -4,7 +4,7 @@ import { User } from '../models/User.js'
 import { Activity } from '../models/adminModels.js'
 import { signToken, signRefreshToken } from '../middleware/auth.js'
 import { systemLog, SYSTEM_LOG_SOURCES } from '../utils/systemLog.js'
-import { uploadToDrive } from '../utils/driveUpload.js'
+import { saveBufferToGridFS, streamGridFSFile, deleteGridFSFile, isGridFsId } from '../utils/mongoStorage.js'
 import fs from 'fs'
 import path from 'path'
 
@@ -83,44 +83,33 @@ export async function me(req, res) {
 
 export async function updateAvatar(req, res) {
   if (!req.file) return res.status(400).json({ message: 'No image uploaded' })
-  const saveLocal = () => {
-    const safe = req.file.originalname.replace(/[^a-zA-Z0-9.\-_]/g, '_')
-    const filename = `${Date.now()}-${safe}`
-    const dest = path.join(process.cwd(), 'uploads', filename)
-    if (!fs.existsSync(path.dirname(dest))) fs.mkdirSync(path.dirname(dest), { recursive: true })
-    fs.writeFileSync(dest, req.file.buffer)
-    return `/uploads/${filename}`
-  }
-  let avatar = null
-  if (process.env.GOOGLE_DRIVE_FOLDER_ID && req.file.buffer) {
-    try {
-      const uploaded = await uploadToDrive({ buffer: req.file.buffer, originalname: req.file.originalname, mimetype: req.file.mimetype })
-      avatar = uploaded.id
-    } catch (err) {
-      // Drive token expired / quota / network — fall back to local disk
-      // so profile upload never hard-fails in production.
-      console.error('[avatar] Drive upload failed, falling back to local:', err?.message || err)
-      try {
-        avatar = saveLocal()
-      } catch (fallbackErr) {
-        return res.status(500).json({ message: 'Avatar upload failed. Please retry.' })
-      }
+  if (!req.file.buffer) return res.status(400).json({ message: 'Avatar upload failed. Please retry.' })
+  try {
+    // MongoDB Atlas only — avatar bytes stored in GridFS.
+    const gridFsId = await saveBufferToGridFS(req.file.buffer, {
+      filename: req.file.originalname,
+      contentType: req.file.mimetype,
+      metadata: { owner: req.user.email, kind: 'avatar' },
+    })
+    // clean up previous avatar binary to avoid orphans
+    if (req.user.avatar && isGridFsId(req.user.avatar)) {
+      await deleteGridFSFile(req.user.avatar)
     }
-  } else {
-    try {
-      avatar = saveLocal()
-    } catch {
-      return res.status(500).json({ message: 'Avatar upload failed. Please retry.' })
-    }
+    req.user.avatar = gridFsId
+    await req.user.save({ validateBeforeSave: false })
+    const safe = req.user.toObject()
+    delete safe.password
+    res.json({ avatar: gridFsId, user: safe })
+  } catch (err) {
+    console.error('[avatar] GridFS upload failed:', err?.message || err)
+    return res.status(500).json({ message: 'Avatar upload failed. Please retry.' })
   }
-  req.user.avatar = avatar
-  await req.user.save({ validateBeforeSave: false })
-  const safe = req.user.toObject()
-  delete safe.password
-  res.json({ avatar, user: safe })
 }
 
 export async function deleteAvatar(req, res) {
+  if (req.user.avatar && isGridFsId(req.user.avatar)) {
+    await deleteGridFSFile(req.user.avatar)
+  }
   req.user.avatar = ''
   await req.user.save({ validateBeforeSave: false })
   const safe = req.user.toObject()
@@ -131,19 +120,22 @@ export async function deleteAvatar(req, res) {
 export async function getAvatar(req, res) {
   const fileId = req.params.fileId
   if (!fileId) return res.status(400).json({ message: 'File ID required' })
-  // Drive fileId (no slash) -> proxy via Drive
-  if (!String(fileId).startsWith('/')) {
+  // GridFS id (24-hex) -> stream bytes from MongoDB Atlas
+  if (isGridFsId(fileId)) {
     try {
-      const { driveDownload } = await import('../utils/driveUpload.js')
-      return driveDownload(fileId, res)
-    } catch (e) {
+      return await streamGridFSFile(fileId, res, { filename: 'avatar', disposition: 'inline' })
+    } catch {
       return res.status(404).json({ message: 'Avatar not found' })
     }
   }
-  // fallback old local path
-  const p = path.join(process.cwd(), String(fileId).replace(/^\//, ''))
-  if (!fs.existsSync(p)) return res.status(404).json({ message: 'Avatar not found' })
-  res.sendFile(p)
+  if (String(fileId).startsWith('/')) {
+    // legacy local-disk avatar (read-only fallback)
+    const p = path.join(process.cwd(), String(fileId).replace(/^\//, ''))
+    if (!fs.existsSync(p)) return res.status(404).json({ message: 'Avatar not found' })
+    return res.sendFile(p)
+  }
+  // Legacy Google Drive avatar — Drive removed.
+  return res.status(410).json({ message: 'Avatar was stored on Google Drive, which is no longer supported. Please re-upload it.' })
 }
 
 export async function refresh(req, res) {

@@ -5,7 +5,13 @@ import { Folder, FileItem } from '../models/fileModels.js'
 import { upload } from '../middleware/upload.js'
 import { asyncHandler, ApiError } from '../utils/asyncHandler.js'
 import { protect } from '../middleware/auth.js'
-import { uploadToDrive, driveDownload, deleteFromDrive } from '../utils/driveUpload.js'
+import {
+  saveBufferToGridFS,
+  streamGridFSFile,
+  deleteGridFSFile,
+  isGridFsId,
+  extractGridFsId,
+} from '../utils/mongoStorage.js'
 
 const router = Router()
 
@@ -27,6 +33,8 @@ function detectType(mime = '', name = '') {
   return 'other'
 }
 
+// Legacy disk support (read-only, for files uploaded before the MongoDB migration).
+// No new files are ever written to disk.
 const UPLOADS_ROOT = path.resolve(process.cwd(), 'uploads')
 const diskPath = (url) => {
   const p = path.resolve(process.cwd(), String(url).replace(/^\//, ''))
@@ -36,7 +44,44 @@ const diskPath = (url) => {
   return p
 }
 
-const isDriveId = (url) => url && !String(url).startsWith('/')
+const gridFsIdOfFile = (file) => extractGridFsId(file?.fileId, file?.url)
+const gridFsIdOfVersion = (v) => extractGridFsId(v?.fileId, v?.filename)
+
+async function deleteFileBinaries(file) {
+  for (const v of file.versions || []) {
+    const gid = gridFsIdOfVersion(v)
+    if (gid) await deleteGridFSFile(gid)
+    else if (v?.filename && !isGridFsId(v.filename)) {
+      // legacy disk version
+      try {
+        const p = diskPath(`/uploads/${v.filename}`)
+        if (fs.existsSync(p)) fs.unlinkSync(p)
+      } catch {}
+    }
+    // legacy Drive versions: nothing to delete (Drive removed) — DB record is enough
+  }
+  const gid = gridFsIdOfFile(file)
+  if (gid) await deleteGridFSFile(gid)
+}
+
+async function streamFileItem(file, res, disposition) {
+  const gid = gridFsIdOfFile(file)
+  if (gid) {
+    return streamGridFSFile(gid, res, {
+      filename: file.originalName || file.name,
+      contentType: file.contentType || file.mimeType,
+      disposition,
+    })
+  }
+  if (file.url && String(file.url).startsWith('/')) {
+    const p = diskPath(file.url)
+    if (!fs.existsSync(p)) return res.status(404).json({ message: 'File missing on disk' })
+    if (disposition === 'attachment') return res.download(p, file.originalName || file.name)
+    return res.sendFile(p)
+  }
+  // Legacy Google Drive reference — Drive integration removed, bytes live in MongoDB now.
+  return res.status(410).json({ message: 'This file was stored on Google Drive, which is no longer supported. Please re-upload it.' })
+}
 
 const GENERAL_FILE_FILTER = { source: { $ne: 'chat' } }
 
@@ -147,17 +192,7 @@ router.post('/bulk-hard-delete', asyncHandler(async (req, res) => {
       assertNotChatFile(file)
       const isOwner = file.owner === req.user.name || file.owner === req.user.email
       if (!isPrivileged && !isOwner) throw new ApiError(403, 'You can only delete files you own')
-      for (const v of file.versions || []) {
-        if (isDriveId(v.filename)) {
-          await deleteFromDrive(v.filename)
-        } else {
-          const p = diskPath(`/uploads/${v.filename}`)
-          if (fs.existsSync(p)) fs.unlinkSync(p)
-        }
-      }
-      if (isDriveId(file.url)) {
-        await deleteFromDrive(file.url)
-      }
+      await deleteFileBinaries(file)
       await FileItem.findByIdAndDelete(id)
       deleted.push(id)
     } catch (e) {
@@ -201,41 +236,46 @@ router.post('/folders/:id/restore', asyncHandler(async (req, res) => {
 
 router.post('/upload', upload.single('file'), asyncHandler(async (req, res) => {
   if (!req.file) return res.status(400).json({ message: 'No file uploaded' })
+  if (!req.file.buffer) return res.status(400).json({ message: 'Upload failed: empty file' })
   const folder = req.body.folder && req.body.folder !== 'root' ? req.body.folder : null
   const type = detectType(req.file.mimetype, req.file.originalname)
-  let driveId = null
-  let url = null
-  if (process.env.GOOGLE_DRIVE_FOLDER_ID && req.file.buffer) {
-    const uploaded = await uploadToDrive({ buffer: req.file.buffer, originalname: req.file.originalname, mimetype: req.file.mimetype })
-    driveId = uploaded.id
-    url = driveId
-  } else {
-    // fallback local disk (when Drive not configured) — write buffer to uploads
-    const safe = req.file.originalname.replace(/[^a-zA-Z0-9.\-_]/g, '_')
-    const filename = `${Date.now()}-${safe}`
-    const dest = path.join(process.cwd(), 'uploads', filename)
-    if (!fs.existsSync(path.dirname(dest))) fs.mkdirSync(path.dirname(dest), { recursive: true })
-    fs.writeFileSync(dest, req.file.buffer)
-    driveId = filename
-    url = `/uploads/${filename}`
+
+  // MongoDB Atlas only — bytes stored in GridFS, no Drive, no local disk.
+  const gridFsId = await saveBufferToGridFS(req.file.buffer, {
+    filename: req.file.originalname,
+    contentType: req.file.mimetype,
+    metadata: { owner: req.user.name, folder: folder || 'root', source: 'files' },
+  })
+  const version = {
+    version: 1,
+    filename: gridFsId,
+    fileId: gridFsId,
+    contentType: req.file.mimetype,
+    size: req.file.size,
+    by: req.user.name,
+    uploadedAt: new Date(),
   }
-  const version = { version: 1, filename: driveId, size: req.file.size, by: req.user.name, uploadedAt: new Date() }
 
   const existing = await FileItem.findOne({ name: req.file.originalname, folder: folder || null, isTrashed: false, source: { $ne: 'chat' } })
   if (existing) {
     const next = (existing.versions?.length || 0) + 1
     existing.versions.push({ ...version, version: next })
-    existing.url = url
+    existing.url = gridFsId
+    existing.fileId = gridFsId
+    existing.contentType = req.file.mimetype
     existing.size = req.file.size
     existing.mimeType = req.file.mimetype
     existing.type = type
+    existing.storage = 'gridfs'
     await existing.save()
     return res.status(200).json(norm(existing))
   }
 
   const file = await FileItem.create({
     name: req.file.originalname, originalName: req.file.originalname, mimeType: req.file.mimetype,
-    type, size: req.file.size, url, folder, owner: req.user.name, versions: [version],
+    contentType: req.file.mimetype, type, size: req.file.size,
+    url: gridFsId, fileId: gridFsId, storage: 'gridfs',
+    folder, owner: req.user.name, versions: [version],
   })
   res.status(201).json(norm(file))
 }))
@@ -251,24 +291,14 @@ router.get('/:id/download', asyncHandler(async (req, res) => {
   const file = await FileItem.findById(req.params.id)
   if (!file || !file.url) return res.status(404).json({ message: 'File not found' })
   assertNotChatFile(file)
-  if (isDriveId(file.url)) {
-    return driveDownload(file.url, res)
-  }
-  const p = diskPath(file.url)
-  if (!fs.existsSync(p)) return res.status(404).json({ message: 'File missing on disk' })
-  res.download(p, file.originalName || file.name)
+  return streamFileItem(file, res, 'attachment')
 }))
 
 router.get('/:id/raw', asyncHandler(async (req, res) => {
   const file = await FileItem.findById(req.params.id)
   if (!file || !file.url) return res.status(404).json({ message: 'File not found' })
   assertNotChatFile(file)
-  if (isDriveId(file.url)) {
-    return driveDownload(file.url, res)
-  }
-  const p = diskPath(file.url)
-  if (!fs.existsSync(p)) return res.status(404).json({ message: 'File missing on disk' })
-  res.sendFile(p)
+  return streamFileItem(file, res, 'inline')
 }))
 
 router.patch('/:id', asyncHandler(async (req, res) => {
@@ -313,7 +343,17 @@ router.post('/:id/version/:versionId/restore', asyncHandler(async (req, res) => 
   assertNotChatFile(file)
   const v = file.versions.id(req.params.versionId)
   if (!v) return res.status(404).json({ message: 'Version not found' })
-  file.url = isDriveId(v.filename) ? v.filename : `/uploads/${v.filename}`
+  const gid = gridFsIdOfVersion(v)
+  if (gid) {
+    file.url = gid
+    file.fileId = gid
+    file.contentType = v.contentType || file.mimeType
+    file.storage = 'gridfs'
+  } else if (v.filename && String(v.filename).startsWith('/')) {
+    file.url = `/uploads/${v.filename}`
+  } else if (v.filename) {
+    file.url = `/uploads/${v.filename}`
+  }
   file.size = v.size
   await file.save()
   res.json(norm(file))
@@ -361,14 +401,7 @@ router.delete('/:id/hard', asyncHandler(async (req, res) => {
     const folderIds = await collectFolderIds(String(folder._id))
     const files = await FileItem.find({ folder: { $in: folderIds } })
     for (const f of files) {
-      for (const v of f.versions || []) {
-        if (isDriveId(v.filename)) await deleteFromDrive(v.filename)
-        else {
-          const p = diskPath(`/uploads/${v.filename}`)
-          if (fs.existsSync(p)) fs.unlinkSync(p)
-        }
-      }
-      if (isDriveId(f.url)) await deleteFromDrive(f.url)
+      await deleteFileBinaries(f)
     }
     await FileItem.deleteMany({ folder: { $in: folderIds } })
     await Folder.deleteMany({ _id: { $in: folderIds } })
@@ -382,14 +415,7 @@ router.delete('/:id/hard', asyncHandler(async (req, res) => {
   if (!['Admin', 'Manager'].includes(req.user.role) && !isOwner) {
     return res.status(403).json({ message: 'You can only delete files you own' })
   }
-  for (const v of file.versions || []) {
-    if (isDriveId(v.filename)) await deleteFromDrive(v.filename)
-    else {
-      const p = diskPath(`/uploads/${v.filename}`)
-      if (fs.existsSync(p)) fs.unlinkSync(p)
-    }
-  }
-  if (isDriveId(file.url)) await deleteFromDrive(file.url)
+  await deleteFileBinaries(file)
   await FileItem.findByIdAndDelete(req.params.id)
   res.json({ id: String(file._id), message: 'Permanently deleted' })
 }))

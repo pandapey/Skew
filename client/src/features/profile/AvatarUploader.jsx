@@ -8,22 +8,16 @@ import { Avatar, Button } from '@/components/ui'
 const ACCEPTED = ['image/png', 'image/jpeg', 'image/webp']
 const MAX_BYTES = 5 * 1024 * 1024
 
-/**
- * @param name  Display name used for the generated initials fallback. The staff
- *              profile passes the user's name; the client profile passes the
- *              contact person, which is what it already displayed.
- * @param size  Avatar diameter in px (staff profile uses 96, client uses 80).
- */
 export function AvatarUploader({ name, size = 96, className = '' }) {
   const { user, patchUser } = useAuth()
   const fileRef = useRef(null)
-  const [preview, setPreview] = useState(null) // { url, file }
+  const [preview, setPreview] = useState(null)
   const [saving, setSaving] = useState(false)
   const [removing, setRemoving] = useState(false)
 
   const pickFile = (e) => {
     const file = e.target.files?.[0]
-    e.target.value = '' // allow re-picking the same file
+    e.target.value = ''
     if (!file) return
     if (!ACCEPTED.includes(file.type)) {
       toast.error('Please choose a PNG, JPG, JPEG or WEBP image.')
@@ -50,7 +44,21 @@ export function AvatarUploader({ name, size = 96, className = '' }) {
       cancelPreview()
       toast.success('Profile picture updated')
     } catch (err) {
-      toast.error(err?.response?.data?.message || 'Could not upload picture')
+      const status = err?.response?.status
+      const serverMsg = err?.response?.data?.message
+      if (!err?.response) {
+        // CORS blocked, backend down, or 60s timeout (Drive cold-start).
+        // err.message is "Network Error" / "timeout of 60000ms exceeded".
+        toast.error(
+          err?.code === 'ECONNABORTED' || /timeout/i.test(err?.message || '')
+            ? 'Upload timed out — file may be large or server is slow. Try again.'
+            : 'Network error — cannot reach API. Check VITE_API_BASE_URL and backend CORS (CLIENT_URL).'
+        )
+      } else if (status === 413 || /too large|file size/i.test(serverMsg || '')) {
+        toast.error('Image is too large (max 5MB).')
+      } else {
+        toast.error(serverMsg || 'Could not upload picture')
+      }
     } finally {
       setSaving(false)
     }

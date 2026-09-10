@@ -21,6 +21,14 @@ function getAllowedOrigins() {
 
 const LOCALHOST_RE = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/
 
+// Same-project deploys (Render/Vercel/Netlify preview URLs) share a suffix.
+// Auto-allow them so live works even if CLIENT_URL env was forgotten on Render.
+const SAME_PROJECT_RES = [
+  /\.onrender\.com$/,
+  /\.vercel\.app$/,
+  /\.netlify\.app$/,
+]
+
 export const isAllowedOrigin = (origin) => {
   if (!origin) return true // curl / mobile apps / same-origin (no Origin header)
   const clean = normalize(origin)
@@ -28,6 +36,10 @@ export const isAllowedOrigin = (origin) => {
   if (allowed.includes(clean)) return true
   if (allowed.includes('*')) return true
   if (LOCALHOST_RE.test(clean)) return true
+  try {
+    const { hostname } = new URL(clean)
+    if (SAME_PROJECT_RES.some((re) => re.test(hostname))) return true
+  } catch { /* invalid origin -> block below */ }
   return false
 }
 

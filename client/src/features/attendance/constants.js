@@ -7,7 +7,6 @@ export const STATUS_TONE = {
   Absent: 'danger', 'On Leave': 'default', 'Not Marked': 'default',
 }
 
-// Calendar cell colors by status
 export const CALENDAR_TONE = {
   Present: 'bg-success/15 text-success', Late: 'bg-warning/15 text-warning',
   'Early Exit': 'bg-accent/15 text-accent', Absent: 'bg-danger/15 text-danger',
@@ -16,3 +15,7 @@ export const CALENDAR_TONE = {
 }
 
 export const ATTENDANCE_WRITE_ROLES = ['Admin', 'Manager']
+
+// Sunday (dayjs .day() === 0) is the company weekly off.
+// Used by AttendanceCalendar to mark weekends.
+export const WEEKLY_OFF_DAY = 0

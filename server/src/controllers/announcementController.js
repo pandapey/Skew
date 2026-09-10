@@ -1,25 +1,9 @@
-// Announcements controller — CRUD over Post plus like toggle, comment and
-// media upload. List supports search / type / pinned / sort.
 import { Post } from '../models/announcementModels.js'
 import { crudController } from './crudController.js'
 import { escapeRegex, clampLimit, clampPage } from '../utils/query.js'
 
 const base = crudController(Post)
-
-// PHASE ADMIN (TASK 2): the caller's id, as a string, for per-user like state.
 const viewerId = (req) => String(req.user?._id || req.user?.id || '')
-
-// PHASE ADMIN (TASK 2): project a stored post into the shape the feed expects.
-//
-// `liked` is NOT a stored column any more (see announcementModels.js) - it is
-// derived here, per request, from `likedBy` for the CALLING user. That is what
-// makes a like survive a page refresh while still being correct per user: the
-// document holds the full set of likers, and each viewer is told only whether
-// THEY are in it. `likedBy` itself is stripped from the response so the feed
-// never leaks the list of who liked what.
-// `read` follows the same pattern from `readBy`: derived per request, stripped
-// from the response, so the unread state survives refresh while staying
-// private and per-user.
 const withViewerState = (doc, req) => {
   const json = typeof doc?.toJSON === 'function' ? doc.toJSON() : { ...doc }
   const uid = viewerId(req)
@@ -33,10 +17,6 @@ const withViewerState = (doc, req) => {
 export const announcementController = {
   ...base,
 
-  // PHASE ADMIN (TASK 2): `get` is overridden so a single post is projected
-  // through the same viewer-state mapper as the list. Without this the detail
-  // response would carry a raw `likedBy` array and no `liked` flag, i.e. the
-  // two endpoints would disagree about the same post.
   get: async (req, res) => {
     const doc = await Post.findById(req.params.id)
     if (!doc) return res.status(404).json({ message: 'Post not found' })
@@ -55,25 +35,9 @@ export const announcementController = {
       .sort(sortOpt)
       .skip((clampPage(page) - 1) * safeLimit)
       .limit(safeLimit)
-    // PHASE ADMIN (TASK 2): every post is projected for the calling user so the
-    // heart renders correctly on first paint and after any refresh.
     res.json(docs.map((d) => withViewerState(d, req)))
   },
 
-  // Toggle the requesting user's like.
-  //
-  // PHASE ADMIN (TASK 2) ROOT CAUSE FIX. This previously did:
-  //     doc.liked = !doc.liked
-  //     doc.likes = Math.max(0, doc.likes + (doc.liked ? 1 : -1))
-  // which flipped ONE GLOBAL boolean shared by every user, so a like by one
-  // person showed as liked for everybody and a second person's click silently
-  // UNDID the first person's like.
-  //
-  // Now the caller's id is added to / removed from `likedBy`, which is the
-  // actual persistence for the toggle. `likes` is kept as the stored counter
-  // and moved in step with the membership change (rather than being reset to
-  // `likedBy.length`) so historical seeded counts are preserved instead of
-  // being wiped to zero the first time somebody clicks.
   like: async (req, res) => {
     const uid = viewerId(req)
     if (!uid) return res.status(401).json({ message: 'Not authorized' })
@@ -87,10 +51,6 @@ export const announcementController = {
     res.json(withViewerState(doc, req))
   },
 
-  // PHASE: EMPLOYEE ANNOUNCEMENT READ STATE — idempotently mark the post as
-  // read FOR THE CALLING USER ONLY (their id is added to `readBy`). A caller
-  // can never touch anyone else's read state, and re-reading never changes the
-  // stored count.
   markRead: async (req, res) => {
     const uid = viewerId(req)
     if (!uid) return res.status(401).json({ message: 'Not authorized' })
@@ -104,9 +64,6 @@ export const announcementController = {
     res.json(withViewerState(doc, req))
   },
 
-  // PHASE: EMPLOYEE ANNOUNCEMENT READ STATE — count of posts the CALLING USER
-  // has not read yet, computed server-side from `readBy` (never from a client-
-  // supplied number). The same `readBy: { $ne: uid }` rule drives the nav badge.
   unreadCount: async (req, res) => {
     const uid = viewerId(req)
     if (!uid) return res.status(401).json({ message: 'Not authorized' })
@@ -114,14 +71,6 @@ export const announcementController = {
     res.json({ count })
   },
 
-  // Append a comment.
-  //
-  // PHASE ADMIN (TASK 2): the author is now taken from the AUTHENTICATED
-  // SESSION instead of the request body. The client used to send a hardcoded
-  // default of 'You' (see announcementApi.comment), so every stored comment was
-  // literally attributed to "You" for all users forever. Deriving it server-side
-  // also means a caller can no longer post a comment under someone else's name.
-  // A client-supplied `author` is deliberately ignored.
   comment: async (req, res) => {
     const doc = await Post.findById(req.params.id)
     if (!doc) return res.status(404).json({ message: 'Post not found' })
@@ -130,29 +79,68 @@ export const announcementController = {
     doc.comments.push({
       author: req.user?.name || 'Anonymous',
       body: body.trim(),
-      date: new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'}),
+      date: new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }),
     })
     await doc.save()
     res.status(201).json(withViewerState(doc, req))
   },
 
-  // Upload a media file (multer) and attach it to the post.
   uploadMedia: async (req, res) => {
     const doc = await Post.findById(req.params.id)
     if (!doc) return res.status(404).json({ message: 'Post not found' })
     if (!req.file) return res.status(400).json({ message: 'No file uploaded' })
+    if (!req.file.buffer) return res.status(400).json({ message: 'No file uploaded' })
     const type = req.file.mimetype.startsWith('image/')
       ? 'image'
       : req.file.mimetype.startsWith('video/')
         ? 'video'
         : 'file'
+    // MongoDB Atlas only — bytes in GridFS.
+    const { saveBufferToGridFS } = await import('../utils/mongoStorage.js')
+    const gridFsId = await saveBufferToGridFS(req.file.buffer, {
+      filename: req.file.originalname,
+      contentType: req.file.mimetype,
+      metadata: { kind: 'announcement', post: String(doc._id) },
+    })
     doc.attachments.push({
       name: req.file.originalname,
       type,
-      url: `/uploads/${req.file.filename}`,
+      url: '',
+      fileId: gridFsId,
+      contentType: req.file.mimetype,
+      storage: 'gridfs',
       size: req.file.size,
     })
     await doc.save()
+    // fill download url now that we know the attachment subdoc id
+    const att = doc.attachments.at(-1)
+    att.url = `/announcements/${String(doc._id)}/attachments/${String(att._id)}/download`
+    await doc.save()
     res.status(201).json(withViewerState(doc, req))
+  },
+
+  downloadMedia: async (req, res) => {
+    const doc = await Post.findById(req.params.id)
+    if (!doc) return res.status(404).json({ message: 'Post not found' })
+    const att = doc.attachments.id(req.params.attId)
+    if (!att) return res.status(404).json({ message: 'Attachment not found' })
+    const { streamGridFSFile, isGridFsId } = await import('../utils/mongoStorage.js')
+    if (att.fileId && isGridFsId(att.fileId)) {
+      return streamGridFSFile(att.fileId, res, {
+        filename: att.name,
+        contentType: att.contentType,
+        disposition: att.type === 'image' || att.type === 'video' ? 'inline' : 'attachment',
+      })
+    }
+    if (att.url && String(att.url).startsWith('/uploads/')) {
+      const path = await import('path')
+      const abs = path.resolve(process.cwd(), `.${att.url}`)
+      const root = path.resolve(process.cwd(), 'uploads')
+      if (!abs.startsWith(root)) return res.status(400).json({ message: 'Invalid file path' })
+      const fs = await import('fs')
+      if (!fs.existsSync(abs)) return res.status(404).json({ message: 'File not found' })
+      return res.sendFile(abs)
+    }
+    return res.status(410).json({ message: 'This file was stored outside MongoDB. Please re-upload it.' })
   },
 }

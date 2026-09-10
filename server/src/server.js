@@ -1,3 +1,4 @@
+import 'dotenv/config'
 process.env.TZ = process.env.TZ || 'Asia/Kolkata'
 import express from 'express'
 import cors from 'cors'
@@ -6,16 +7,12 @@ import dotenv from 'dotenv'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import mongoose from 'mongoose'
-
 import { connectDB, gracefulShutdown } from './config/db.js'
 import { corsOptions } from './config/cors.js'
 import { notFound, errorHandler } from './middleware/error.js'
-
 import { systemLog, SYSTEM_LOG_SOURCES } from './utils/systemLog.js'
-
 import { initRealtime } from './realtime/index.js'
 import { withEmit } from './realtime/emitMiddleware.js'
-
 import authRoutes from './routes/authRoutes.js'
 import employeeRoutes from './routes/employeeRoutes.js'
 import hrRoutes from './routes/hrRoutes.js'
@@ -44,7 +41,11 @@ dotenv.config()
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const app = express()
 
+app.set('trust proxy', 1)
 app.use(cors(corsOptions))
+// Explicit preflight handler (Express 4 + cors already handles OPTIONS,
+// this guarantees 204 + headers even if a route is missing).
+app.options(/.*/, cors(corsOptions))
 
 app.use(express.json({ limit: '10mb' }))
 app.use(express.urlencoded({ extended: true, limit: '10mb' }))

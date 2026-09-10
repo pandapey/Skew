@@ -4,9 +4,7 @@ import { Conversation, Message, ChatBlock, UserPresence } from '../models/chatMo
 import { FileItem } from '../models/fileModels.js'
 import { notifyUsersByEmail } from './notificationService.js'
 import { emitToUsers, getPresenceMap, isUserOnline } from '../realtime/index.js'
-import { uploadToDrive } from '../utils/driveUpload.js'
-import fs from 'fs'
-import path from 'path'
+import { saveBufferToGridFS, isGridFsId, extractGridFsId } from '../utils/mongoStorage.js'
 import crypto from 'crypto'
 
 const CHAT_ROLES = ['Admin', 'Manager', 'Employee']
@@ -836,40 +834,24 @@ export async function uploadChatAttachment(userId, conversationId, file) {
 
   const me = await resolveInternalUser(userId)
   const kind = fileKindFromMime(file.mimetype || '')
-  let driveId = null
-  let url = null
-  if (process.env.GOOGLE_DRIVE_FOLDER_ID && file.buffer) {
-    try {
-      const uploaded = await uploadToDrive({ buffer: file.buffer, originalname: file.originalname, mimetype: file.mimetype })
-      driveId = uploaded.id
-      url = driveId
-    } catch (err) {
-      console.warn('Drive upload failed, falling back to local disk:', err?.message || err)
-      const safe = file.originalname.replace(/[^a-zA-Z0-9.\-_]/g, '_')
-      const filename = `${Date.now()}-${safe}`
-      const dest = path.join(process.cwd(), 'chat-uploads', filename)
-      if (!fs.existsSync(path.dirname(dest))) fs.mkdirSync(path.dirname(dest), { recursive: true })
-      fs.writeFileSync(dest, file.buffer)
-      driveId = filename
-      url = `/chat-uploads/${filename}`
-    }
-  } else {
-    const safe = file.originalname.replace(/[^a-zA-Z0-9.\-_]/g, '_')
-    const filename = `${Date.now()}-${safe}`
-    const dest = path.join(process.cwd(), 'chat-uploads', filename)
-    if (!fs.existsSync(path.dirname(dest))) fs.mkdirSync(path.dirname(dest), { recursive: true })
-    fs.writeFileSync(dest, file.buffer)
-    driveId = filename
-    url = `/chat-uploads/${filename}`
-  }
+  if (!file?.buffer) throw new ApiError(400, 'No file uploaded')
+  // MongoDB Atlas only — bytes stored in GridFS.
+  const gridFsId = await saveBufferToGridFS(file.buffer, {
+    filename: file.originalname,
+    contentType: file.mimetype || 'application/octet-stream',
+    metadata: { owner: me.name, source: 'chat', conversation: String(conversation._id) },
+  })
 
   const item = await FileItem.create({
     name: file.originalname,
     originalName: file.originalname,
     mimeType: file.mimetype || 'application/octet-stream',
+    contentType: file.mimetype || 'application/octet-stream',
     type: kind === 'audio' ? 'other' : kind,
     size: file.size,
-    url: url,
+    url: gridFsId,
+    fileId: gridFsId,
+    storage: 'gridfs',
     owner: me.name,
     permission: 'private',
     source: 'chat',
@@ -915,13 +897,23 @@ export async function getChatAttachment(userId, conversationId, fileId) {
     )
   }
 
-  const isDrive = item.url && !String(item.url).startsWith('/')
-  if (isDrive) {
-    return { driveId: String(item.url), name: item.originalName || item.name, isDrive: true }
+  const gid = extractGridFsId(item?.fileId, item?.url)
+  if (gid) {
+    return {
+      gridFsId: gid,
+      name: item.originalName || item.name,
+      mimeType: item.contentType || item.mimeType,
+      isGridFS: true,
+    }
   }
-  const diskName = String(item.url || '').replace(/^\/chat-uploads\//, '')
-  if (!diskName || /[/\\]/.test(diskName)) throw new ApiError(400, 'Invalid file path')
-  return { absPath: `chat-uploads/${diskName}`, name: item.originalName || item.name, isDrive: false }
+  // Legacy local-disk file (read-only fallback)
+  if (item?.url && String(item.url).startsWith('/')) {
+    const diskName = String(item.url).replace(/^\/chat-uploads\//, '')
+    if (!diskName || /[/\\]/.test(diskName)) throw new ApiError(400, 'Invalid file path')
+    return { absPath: `chat-uploads/${diskName}`, name: item.originalName || item.name, isGridFS: false }
+  }
+  // Legacy Google Drive reference — Drive removed.
+  throw new ApiError(410, 'This attachment was stored on Google Drive, which is no longer supported. Please re-upload it.')
 }
 
 export async function markConversationRead(userId, conversationId) {

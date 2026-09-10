@@ -5,8 +5,6 @@ import { logout as logoutAction, setTokens as setTokensAction } from '@/redux/sl
 
 const baseURL = import.meta.env.VITE_API_BASE_URL || 'https://skew-server-317n.onrender.com/api'
 
-// In-memory auth token holder. Per the MongoDB-only migration we no longer
-// persist credentials in localStorage; the token lives for the session only.
 let _token = null
 let _refreshToken = null
 export const setAuthToken = (token, refreshToken) => {
@@ -19,18 +17,11 @@ export const clearAuthToken = () => {
   _refreshToken = null
 }
 
-// Central axios instance
-// NOTE: no default Content-Type is set. Axios sets `application/json` itself
-// for JSON bodies, and a hardcoded JSON/multipart default would break FormData
-// uploads: browsers only append the multipart boundary when the header is
-// ABSENT, so an explicit boundary-less 'multipart/form-data' header makes
-// multer fail with "Multipart: Boundary not found".
 const apiClient = axios.create({
   baseURL,
   timeout: 15000,
 })
 
-// --- Request interceptor: attach JWT ---
 apiClient.interceptors.request.use(
   (config) => {
     if (_token) config.headers.Authorization = `Bearer ${_token}`
@@ -39,7 +30,6 @@ apiClient.interceptors.request.use(
   (error) => Promise.reject(error)
 )
 
-// --- Response interceptor: refresh + global error handling + retry ---
 let isRefreshing = false
 let queue = []
 
@@ -54,14 +44,9 @@ apiClient.interceptors.response.use(
     const original = error.config
     const status = error.response?.status
 
-    // Token refresh flow.
-    // Guard: with no refresh token in memory there is nothing to refresh, and
-    // POSTing /auth/refresh would just return 400 ('Refresh token required')
-    // on every single 401 -- the 401 -> 400 -> 401 console loop. Fail straight
-    // to the login screen instead.
     if (status === 401 && !original._retry && !_refreshToken) {
       clearAuthToken()
-      try { store.dispatch(logoutAction()) } catch { /* ignore */ }
+      try { store.dispatch(logoutAction()) } catch {  }
       if (window.location.pathname !== '/login') window.location.href = '/login'
       return Promise.reject(error)
     }
@@ -79,20 +64,18 @@ apiClient.interceptors.response.use(
       try {
         const { data } = await axios.post(`${baseURL}/auth/refresh`, { refreshToken: _refreshToken })
         setAuthToken(data.token, data.refreshToken)
-        // Keep Redux (and its persisted copy) in sync so a reload doesn't lose
-        // the refreshed token.
+
         try {
           store.dispatch(setTokensAction({ token: data.token, refreshToken: data.refreshToken }))
-        } catch { /* ignore */ }
+        } catch {  }
         processQueue(null, data.token)
         original.headers.Authorization = `Bearer ${data.token}`
         return apiClient(original)
       } catch (err) {
         processQueue(err, null)
         clearAuthToken()
-        // The session is unrecoverable: also drop the persisted Redux auth so
-        // the app stops bouncing between dashboard and login, then go to login.
-        try { store.dispatch(logoutAction()) } catch { /* ignore */ }
+
+        try { store.dispatch(logoutAction()) } catch {  }
         if (window.location.pathname !== '/login') window.location.href = '/login'
         return Promise.reject(err)
       } finally {
@@ -100,16 +83,21 @@ apiClient.interceptors.response.use(
       }
     }
 
-    // Simple retry for network / 5xx (once)
     if ((!error.response || status >= 500) && !original._retriedOnce) {
-      original._retriedOnce = true
-      return apiClient(original)
+      // Never auto-retry file uploads: FormData streams are consumed on
+      // the first attempt and Drive/S3 uploads are not idempotent.
+      // Retrying turns one timeout into "No image uploaded" + double toasts.
+      const isUpload =
+        original?.skipRetry ||
+        (typeof FormData !== 'undefined' && original?.data instanceof FormData)
+      if (!isUpload) {
+        original._retriedOnce = true
+        return apiClient(original)
+      }
     }
 
     const message = error.response?.data?.message || error.message || 'Something went wrong'
-    // `skipErrorToast` lets a specific request handle its own errors in the UI
-    // (e.g. a conversation that no longer exists is shown as a proper not-found
-    // screen, not a raw 404 popup) without disabling error handling globally.
+
     if (status !== 401 && !original.skipErrorToast) toast.error(message)
     return Promise.reject(error)
   }

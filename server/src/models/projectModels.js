@@ -197,7 +197,13 @@ const fileSchema = new Schema({
   name: { type: String, required: true },
   type: { type: String, default: 'file' },
   size: { type: Number, default: 0 },
+  // MongoDB Atlas (GridFS) — `fileId` holds the GridFS _id, `url` holds the
+  // API download path for new files. Legacy `/uploads/...` may exist on old docs.
   url: String,
+  fileId: { type: String, default: null, index: true },
+  mimeType: String,
+  contentType: String,
+  storage: { type: String, enum: ['gridfs', 'legacy'], default: 'gridfs' },
   uploadedBy: String,
 }, opts)
 fileSchema.index({ name: 'text' })

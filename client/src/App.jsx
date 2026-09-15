@@ -1,4 +1,6 @@
+import { useEffect } from 'react'
 import { RouterProvider } from 'react-router-dom'
+import { useDispatch, useSelector } from 'react-redux'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { Toaster } from 'react-hot-toast'
 import { router } from '@/routes'
@@ -7,9 +9,31 @@ import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { NotificationProvider } from '@/features/notifications/NotificationContext'
 import { RealtimeProvider } from '@/features/realtime/useRealtimeSync'
 import { useTheme } from '@/hooks/useTheme'
+import { authService } from '@/api/services'
+import { logout as logoutAction, updateUser } from '@/redux/slices/authSlice'
+
+function useSessionRestore() {
+  const dispatch = useDispatch()
+  const { token, isAuthenticated } = useSelector((s) => s.auth)
+
+  useEffect(() => {
+    if (!isAuthenticated || !token) return
+    let cancelled = false
+    authService.me()
+      .then((me) => {
+        if (!cancelled && me && me._id) dispatch(updateUser(me))
+      })
+      .catch(() => {
+        if (!cancelled) dispatch(logoutAction())
+      })
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+}
 
 export default function App() {
   useTheme()
+  useSessionRestore()
 
   return (
     <ErrorBoundary>

@@ -199,3 +199,20 @@ export default function Hosting() {
         </div>
 
         <div className="flex items-center justify-between">
+          <p className="text-sm text-muted">Page {page} of {totalPages}</p>
+          <Pagination page={page} totalPages={totalPages} onChange={(p) => setParams((prev) => ({ ...prev, page: p }))} />
+        </div>
+      </Card>
+
+      <ConfirmDialog
+        open={!!deleting}
+        onClose={() => setDeleting(null)}
+        onConfirm={() => deleteMutation.mutate(deleting.id)}
+        title={`Delete ${deleting?.planName || deleting?.provider || 'hosting plan'}?`}
+        message={`Delete the ${deleting?.planName || deleting?.provider || 'hosting'} plan for ${deleting?.clientName || 'client'}?`}
+        confirmLabel="Delete"
+        loading={deleteMutation.isPending}
+      />
+    </div>
+  )
+}

@@ -145,7 +145,10 @@ export async function refresh(req, res) {
     const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET)
     const user = await User.findById(decoded.id)
     if (!user) return res.status(401).json({ message: 'Invalid refresh token' })
-    res.json({ token: signToken(user) })
+    if (user.status && user.status !== 'Active') {
+      return res.status(403).json({ message: 'Account is no longer active' })
+    }
+    res.json({ token: signToken(user), refreshToken: signRefreshToken(user) })
   } catch {
     res.status(401).json({ message: 'Invalid or expired refresh token' })
   }

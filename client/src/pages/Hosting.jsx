@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
-import { FiServer, FiPlus, FiRefreshCw, FiEdit2, FiTrash2, FiSearch } from 'react-icons/fi'
+import { FiGlobe, FiServer, FiPlus, FiRefreshCw, FiEdit2, FiTrash2, FiSearch } from 'react-icons/fi'
 import { PageHeader, Card, Button, DataTable, Pagination, Select, Badge, StatCard, ConfirmDialog } from '@/components/ui'
 import { useDebounce } from '@/hooks/useDebounce'
 import { hostingApi } from '@/features/infrastructure/infrastructureService'
@@ -152,7 +152,24 @@ export default function Hosting() {
         subtitle="Server and hosting plans you renew on behalf of clients."
         actions={canWrite ? <Button icon={FiPlus} onClick={() => navigate('/hosting/new')}>Add hosting plan</Button> : null}
         icon={FiServer}
+        breadcrumb={[{ label: 'Domain', to: '/domains' }, { label: 'Hosting' }]}
+        backTo="/domains"
       />
+
+      <div className="mb-4 flex gap-2">
+        <button
+          onClick={() => navigate('/domains')}
+          className="inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition bg-black/5 text-muted hover:bg-black/10 dark:bg-white/5 dark:hover:bg-white/10"
+        >
+          <FiGlobe className="h-4 w-4" /> Domains
+        </button>
+        <button
+          onClick={() => navigate('/hosting')}
+          className="inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition bg-primary text-white shadow-glow-primary"
+        >
+          <FiServer className="h-4 w-4" /> Hosting
+        </button>
+      </div>
 
       <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <StatCard label="Plans managed" value={summaryData.total} tone="primary" icon={FiServer} />
@@ -182,20 +199,3 @@ export default function Hosting() {
         </div>
 
         <div className="flex items-center justify-between">
-          <p className="text-sm text-muted">Page {page} of {totalPages}</p>
-          <Pagination page={page} totalPages={totalPages} onChange={(p) => setParams((prev) => ({ ...prev, page: p }))} />
-        </div>
-      </Card>
-
-      <ConfirmDialog
-        open={!!deleting}
-        onClose={() => setDeleting(null)}
-        onConfirm={() => deleteMutation.mutate(deleting.id)}
-        title={`Delete ${deleting?.planName || deleting?.provider || 'hosting plan'}?`}
-        message={`Delete the ${deleting?.planName || deleting?.provider || 'hosting'} plan for ${deleting?.clientName || 'client'}?`}
-        confirmLabel="Delete"
-        loading={deleteMutation.isPending}
-      />
-    </div>
-  )
-}

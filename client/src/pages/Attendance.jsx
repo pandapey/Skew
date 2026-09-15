@@ -93,10 +93,13 @@ export default function Attendance() {
           <div className="flex flex-wrap items-center gap-2">
             <Button variant="ghost" icon={FiUserCheck} onClick={() => navigate('/attendance/leave')}>Leave</Button>
             {!isManager && (
-              <Button variant="ghost" icon={FiBarChart2} onClick={() => navigate(isEmployee ? '/attendance/my-report' : '/attendance/reports')}>Reports</Button>
+              <Button variant="ghost" icon={FiBarChart2} onClick={() => navigate(isEmployee ? '/attendance/my-report' : '/attendance/reports')}>{isEmployee ? 'My Report' : 'Reports'}</Button>
             )}
             {isManager && (
-              <Button variant="ghost" icon={FiBarChart2} onClick={() => navigate('/attendance/my-report')}>My Attendance Report</Button>
+              <>
+                <Button variant="ghost" icon={FiBarChart2} onClick={() => navigate('/attendance/reports')}>Reports</Button>
+                <Button variant="ghost" icon={FiBarChart2} onClick={() => navigate('/attendance/my-report')}>My Report</Button>
+              </>
             )}
           </div>
         )}

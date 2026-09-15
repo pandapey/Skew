@@ -4,9 +4,13 @@ import { Button, CardSkeleton, EmptyState } from '@/components/ui'
 import { GlassChartContainer } from '@/components/glass'
 import { BarsChart } from '@/components/charts/Charts'
 import { useDashboardStats } from '@/hooks/queries/useDashboardStats'
+import { useAuth } from '@/hooks/useAuth'
+import { ROLES } from '@/constants'
 
 export default function AttendanceChartWidget() {
   const navigate = useNavigate()
+  const { hasRole } = useAuth()
+  const isEmployee = hasRole(ROLES.EMPLOYEE)
   const { data, isLoading } = useDashboardStats()
   const attendance = data?.attendance || []
 
@@ -15,7 +19,7 @@ export default function AttendanceChartWidget() {
       title="Weekly Attendance"
       subtitle="Present vs Absent"
       action={
-        <Button variant="ghost" size="sm" icon={FiArrowRight} onClick={() => navigate('/attendance/reports')}>
+        <Button variant="ghost" size="sm" icon={FiArrowRight} onClick={() => navigate(isEmployee ? '/attendance/my-report' : '/attendance/reports')}>
           Reports
         </Button>
       }

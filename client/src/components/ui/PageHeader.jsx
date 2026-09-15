@@ -3,19 +3,8 @@ import { FiArrowLeft } from 'react-icons/fi'
 import { Breadcrumb } from './Breadcrumb'
 import { useGoBack } from '@/hooks/useGoBack'
 
-// Standard page header with title, breadcrumb, and optional actions.
-//
-// Phase 5.5 (Task 6): the global back button lives HERE rather than being
-// added to ~88 individual pages. PageHeader is already the single component
-// every page renders at the top, so this is the one place a back control can
-// be added consistently, styled once, and kept in sync with the breadcrumb
-// directly beneath it. No page needs to opt in.
-//
-// `showBack` defaults to true and exists only as an escape hatch for the rare
-// screen where going back is meaningless. It is hidden automatically on the
-// dashboard, so no caller has to pass it just to avoid a dead button.
-export function PageHeader({ title, subtitle, actions, icon: Icon, showBack = true }) {
-  const { goBack, isRoot } = useGoBack()
+export function PageHeader({ title, subtitle, actions, icon: Icon, showBack = true, breadcrumb, backTo }) {
+  const { goBack, isRoot } = useGoBack(backTo)
   const backVisible = showBack && !isRoot
   return (
     <motion.div
@@ -42,7 +31,7 @@ export function PageHeader({ title, subtitle, actions, icon: Icon, showBack = tr
           </span>
         )}
         <div>
-          <Breadcrumb />
+          <Breadcrumb items={breadcrumb} />
           <h1 className="mt-1 text-2xl font-bold tracking-tight sm:text-3xl">{title}</h1>
           {subtitle && <p className="mt-0.5 text-sm text-muted">{subtitle}</p>}
         </div>

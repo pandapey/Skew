@@ -83,6 +83,19 @@ export function CompanyAttendanceDashboard() {
 
   const rows = data?.data ?? []
 
+  const selectStatus = (status) => setParams((p) => ({ ...p, status, page: 1 }))
+  const activeStatus = params.status || ''
+  const isToday = params.date === todayISO()
+  const statusTitle = activeStatus === 'Present'
+    ? "Today's Present Employees"
+    : activeStatus === 'Absent'
+      ? "Today's Absent Employees"
+      : activeStatus === 'Late'
+        ? "Today's Late Employees"
+        : activeStatus === 'On Leave'
+          ? "Today's Employees On Leave"
+          : isToday ? "Today's Attendance — All Employees" : `Attendance — All Employees (${formatDate(params.date)})`
+
   const departmentOptions = useMemo(() => ([
     { value: '', label: 'All Departments' },
     ...(stats?.byDepartment || [])
@@ -123,8 +136,6 @@ export function CompanyAttendanceDashboard() {
     { header: 'Status', accessor: 'status' },
   ]
 
-  const isToday = params.date === todayISO()
-
   return (
     <div>
       {}
@@ -145,11 +156,11 @@ export function CompanyAttendanceDashboard() {
 
       {}
       <div className="mb-4 grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5">
-        <StatCard label="Total Employees" value={stats?.totalEmployees ?? '-'} icon={FiUsers} />
-        <StatCard label="Present" value={stats?.present ?? '-'} icon={FiUserCheck} tone="success" />
-        <StatCard label="Absent" value={stats?.absent ?? '-'} icon={FiUserX} tone="danger" />
-        <StatCard label="Late" value={stats?.late ?? '-'} icon={FiAlertCircle} tone="warning" />
-        <StatCard label="On Leave" value={stats?.onLeave ?? '-'} icon={FiCalendar} />
+        <StatCard label="Total Employees" value={stats?.totalEmployees ?? '-'} icon={FiUsers} onClick={() => selectStatus('')} className={activeStatus === '' ? 'ring-2 ring-primary/60' : undefined} />
+        <StatCard label="Present" value={stats?.present ?? '-'} icon={FiUserCheck} tone="success" onClick={() => selectStatus('Present')} className={activeStatus === 'Present' ? 'ring-2 ring-success/60' : undefined} />
+        <StatCard label="Absent" value={stats?.absent ?? '-'} icon={FiUserX} tone="danger" onClick={() => selectStatus('Absent')} className={activeStatus === 'Absent' ? 'ring-2 ring-danger/60' : undefined} />
+        <StatCard label="Late" value={stats?.late ?? '-'} icon={FiAlertCircle} tone="warning" onClick={() => selectStatus('Late')} className={activeStatus === 'Late' ? 'ring-2 ring-warning/60' : undefined} />
+        <StatCard label="On Leave" value={stats?.onLeave ?? '-'} icon={FiCalendar} onClick={() => selectStatus('On Leave')} className={activeStatus === 'On Leave' ? 'ring-2 ring-accent/60' : undefined} />
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
@@ -157,9 +168,18 @@ export function CompanyAttendanceDashboard() {
           {}
           <Card>
             <CardHeader
-              title="Company Attendance"
+              title={statusTitle}
               subtitle={isToday ? "Today's records across the organization" : `Records for ${formatDate(params.date)}`}
-              action={<ExportMenu rows={rows} columns={exportColumns} filename="company-attendance" title="Company Attendance" />}
+              action={
+                <div className="flex items-center gap-2">
+                  {activeStatus !== '' && (
+                    <button onClick={() => selectStatus('')} className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-primary transition hover:bg-primary/10">
+                      Show all
+                    </button>
+                  )}
+                  <ExportMenu rows={rows} columns={exportColumns} filename="company-attendance" title="Company Attendance" />
+                </div>
+              }
             />
 
             {}
@@ -191,7 +211,7 @@ export function CompanyAttendanceDashboard() {
               />
             </div>
 
-            <DataTable columns={columns} data={rows} loading={isLoading} empty="No attendance records found" />
+            <DataTable columns={columns} data={rows} loading={isLoading} empty={activeStatus ? `No ${activeStatus.toLowerCase()} employees for this date` : 'No attendance records found'} />
             <div className="flex items-center justify-between">
               <p className="text-sm text-muted">{data?.total || 0} records</p>
               <Pagination

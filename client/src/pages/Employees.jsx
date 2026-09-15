@@ -33,6 +33,7 @@ export default function Employees() {
   const [selected, setSelected] = useState([])
   const [deleting, setDeleting] = useState(null)
   const [bulkDelete, setBulkDelete] = useState(false)
+  const [activeView, setActiveView] = useState('total')
 
   const debouncedSearch = useDebounce(filters.search)
   const queryParams = { ...filters, search: debouncedSearch }
@@ -48,8 +49,42 @@ export default function Employees() {
   const { data: attStats } = useQuery({ queryKey: ['attendance-stats'], queryFn: attendanceApi.stats })
 
   const rows = (data?.data ?? []).map((r) => ({ ...r, id: r.id || r._id }))
+
+  const isRosterView = activeView === 'absent' || activeView === 'leave'
+  const { data: rosterData, isLoading: rosterLoading } = useQuery({
+    queryKey: ['employees-roster', debouncedSearch, filters.department, filters.sortBy, filters.order],
+    queryFn: () => employeeApi.query({
+      search: debouncedSearch,
+      department: filters.department,
+      sortBy: filters.sortBy,
+      order: filters.order,
+      page: 1,
+      limit: 100,
+    }),
+    enabled: isRosterView,
+    placeholderData: keepPreviousData,
+  })
+  const rosterRows = (rosterData?.data ?? []).map((r) => ({ ...r, id: r.id || r._id }))
+  const absentRows = rosterRows.filter((r) => r.attendanceStatus === 'Absent')
+  const leaveRows = rosterRows.filter((r) => r.attendanceStatus === 'On Leave')
+  const displayRows = activeView === 'absent' ? absentRows : activeView === 'leave' ? leaveRows : rows
+  const displayLoading = isRosterView ? rosterLoading : isLoading
+
+  const selectView = (view) => {
+    setActiveView(view)
+    setSelected([])
+    setFilters((f) => ({ ...f, page: 1 }))
+  }
+
+  const onLeaveToday = attStats?.onLeave ?? stats?.onLeave ?? '—'
+  const viewMeta = activeView === 'absent'
+    ? { title: 'Absent Today', empty: 'No employees are absent today' }
+    : activeView === 'leave'
+      ? { title: 'On Leave Today', empty: 'No employees are on leave today' }
+      : { title: 'All Employees', empty: 'No employees match your filters' }
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ['employees'] })
+    qc.invalidateQueries({ queryKey: ['employees-roster'] })
     qc.invalidateQueries({ queryKey: ['employee-stats'] })
   }
 
@@ -69,8 +104,8 @@ export default function Employees() {
     onSuccess: (res) => { toast.success(`${res.updated} employees updated`); setSelected([]); invalidate() },
   })
 
-  const allChecked = rows.length > 0 && rows.every((r) => selected.includes(r.id))
-  const toggleAll = () => setSelected(allChecked ? selected.filter((id) => !rows.some((r) => r.id === id)) : [...new Set([...selected, ...rows.map((r) => r.id)])])
+  const allChecked = displayRows.length > 0 && displayRows.every((r) => selected.includes(r.id))
+  const toggleAll = () => setSelected(allChecked ? selected.filter((id) => !displayRows.some((r) => r.id === id)) : [...new Set([...selected, ...displayRows.map((r) => r.id)])])
   const toggleOne = (id) => setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]))
 
   const openCreate = () => navigate('/employees/new?returnTo=employees')
@@ -132,7 +167,7 @@ export default function Employees() {
         </div>
       ),
     },
-  ], [allChecked, selected, rows, highlightEmail])
+  ], [allChecked, selected, displayRows, highlightEmail])
 
   return (
     <div>
@@ -142,33 +177,50 @@ export default function Employees() {
         actions={
           <>
             <Button variant="ghost" icon={FiGrid} onClick={() => navigate('/employees/dashboard')}>Dashboard</Button>
-            <ExportMenu rows={rows} columns={employeeExportColumns} filename="employees" title="Employee Directory" subtitle={`${data?.total || 0} records`} />
+            <ExportMenu rows={displayRows} columns={employeeExportColumns} filename={`employees-${activeView}`} title={`Employee Directory — ${viewMeta.title}`} subtitle={`${displayRows.length} records`} />
             {canCreate && <Button icon={FiPlus} onClick={openCreate}>Add Employee</Button>}
           </>
         }
       />
 
       <div className="mb-4 grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard label="Total" value={stats?.total ?? '—'} icon={FiUsers} onClick={() => navigate('/employees')} />
-        <StatCard label="Absent Today" value={attStats?.absent ?? '—'} icon={FiUserX} tone="danger" onClick={() => navigate('/attendance?status=Absent')} />
-        <StatCard label="On Leave" value={stats?.onLeave ?? '—'} icon={FiUserX} tone="warning" onClick={() => navigate('/attendance?status=On%20Leave')} />
+        <StatCard label="Total" value={stats?.total ?? '—'} icon={FiUsers} onClick={() => selectView('total')} className={activeView === 'total' ? 'ring-2 ring-primary/60' : undefined} />
+        <StatCard label="Absent Today" value={attStats?.absent ?? '—'} icon={FiUserX} tone="danger" onClick={() => selectView('absent')} className={activeView === 'absent' ? 'ring-2 ring-danger/60' : undefined} />
+        <StatCard label="On Leave" value={onLeaveToday} icon={FiUserX} tone="warning" onClick={() => selectView('leave')} className={activeView === 'leave' ? 'ring-2 ring-warning/60' : undefined} />
         <StatCard label="Avg Salary" value={stats ? formatCurrency(stats.avgSalary) : '—'} icon={FiUsers} tone="accent" />
       </div>
 
       <Card>
-        <EmployeeFilters filters={filters} onChange={setFilters} onReset={() => setFilters(DEFAULT_FILTERS)} />
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <h3 className="text-sm font-semibold">{viewMeta.title}</h3>
+          <span className="text-xs text-muted">
+            {activeView === 'total'
+              ? `${data?.total || 0} employees`
+              : `${displayRows.length} employees today`}
+          </span>
+          {isRosterView && (
+            <Button variant="ghost" size="sm" onClick={() => selectView('total')}>Show all</Button>
+          )}
+        </div>
+        <EmployeeFilters filters={filters} onChange={setFilters} onReset={() => { setFilters(DEFAULT_FILTERS); setActiveView('total') }} />
 
         <div className="relative">
-          {isFetching && !isLoading && (
+          {isFetching && !isLoading && !isRosterView && (
             <div className="absolute right-2 top-2 z-10"><span className="h-4 w-4 animate-spin rounded-full border-2 border-primary/30 border-t-primary block" /></div>
           )}
-          <DataTable columns={columns} data={rows} loading={isLoading} empty="No employees match your filters" />
+          <DataTable columns={columns} data={displayRows} loading={displayLoading} empty={viewMeta.empty} />
         </div>
 
-        <div className="flex items-center justify-between">
-          <p className="text-sm text-muted">{data?.total || 0} employees · page {data?.page || 1} of {data?.totalPages || 1}</p>
-          <Pagination page={filters.page} totalPages={data?.totalPages || 1} onChange={(p) => setFilters((f) => ({ ...f, page: p }))} />
-        </div>
+        {activeView === 'total' ? (
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-muted">{data?.total || 0} employees · page {data?.page || 1} of {data?.totalPages || 1}</p>
+            <Pagination page={filters.page} totalPages={data?.totalPages || 1} onChange={(p) => setFilters((f) => ({ ...f, page: p }))} />
+          </div>
+        ) : (
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-muted">{displayRows.length} employees · {viewMeta.title.toLowerCase()} · same page</p>
+          </div>
+        )}
       </Card>
 
       <ConfirmDialog

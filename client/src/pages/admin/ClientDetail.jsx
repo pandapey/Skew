@@ -7,11 +7,11 @@ import { useAuth } from '@/hooks/useAuth'
 import { clientService } from '@/features/client/clientService'
 import { adminApi } from '@/api/adminApi'
 import { employeeApi } from '@/api/services'
-import { PageHeader, Card, CardHeader, Button, Badge, Input, Select, Textarea, Loader, EmptyState, Avatar, ProgressBar, ConfirmDialog } from '@/components/ui'
+import { PageHeader, Card, CardHeader, Button, Badge, Input, Select, Textarea, Loader, EmptyState, Avatar, ConfirmDialog } from '@/components/ui'
 import { fmtDate } from '@/features/client/constants'
 import { ROLES } from '@/constants'
 
-const TABS = ['Overview', 'Projects', 'Team', 'Billing', 'Documents', 'Announcements', 'Progress', 'Messages', 'Danger']
+const TABS = ['Overview', 'Projects', 'Team', 'Billing', 'Documents', 'Announcements', 'Messages', 'Danger']
 const ADMIN_ONLY_TABS = TABS.filter((t) => t !== 'Overview')
 
 export default function ClientDetail() {
@@ -43,7 +43,6 @@ export default function ClientDetail() {
   const updPayment = mut(({ pid, payId, patch }) => clientService.updatePayment(pid, payId, patch), 'Payment updated')
   const publish = mut((ann) => clientService.publishAnnouncement(ann), 'Announcement published')
   const uploadDoc = mut(({ pid, doc }) => clientService.uploadDocument(pid, doc), 'Document uploaded')
-  const updProgress = mut(({ pid, progress }) => clientService.updateProgress(pid, progress), 'Progress updated')
   const reply = mut(({ threadId, text }) => adminApi.clients.reply(threadId, text), 'Sent')
   const remove = useMutation({ mutationFn: () => clientService.removeClient(id), onSuccess: () => {
     toast.success('Client deleted')
@@ -57,7 +56,6 @@ export default function ClientDetail() {
 
   const visibleTabs = isAdmin ? TABS : TABS.filter((t) => !ADMIN_ONLY_TABS.includes(t))
   const clientProjects = allProjects.filter((p) => p.clientId === id)
-  const available = allProjects.filter((p) => p.clientId !== id)
 
   return (
     <div>
@@ -89,26 +87,15 @@ export default function ClientDetail() {
       )}
 
       {tab === 'Projects' && (
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <Card>
-            <CardHeader title="Assigned Projects" />
-            {clientProjects.length === 0 ? <EmptyState title="No projects assigned" /> : clientProjects.map((p) => (
-              <div key={p.projectId} className="flex items-center justify-between rounded-xl border border-app p-3">
-                <div><p className="text-sm font-medium">{p.name}</p><p className="text-xs text-muted">{p.code} · {p.status}</p></div>
-                <Button variant="ghost" size="sm" icon={FiTrash2} onClick={() => assignProject.mutate(p.projectId)}>Unassign</Button>
-              </div>
-            ))}
-          </Card>
-          <Card>
-            <CardHeader title="Available Projects" subtitle="Assign to this client" />
-            {available.length === 0 ? <EmptyState title="Nothing available" /> : available.slice(0, 8).map((p) => (
-              <div key={p.projectId} className="flex items-center justify-between rounded-xl border border-app p-3">
-                <div><p className="text-sm font-medium">{p.name}</p><p className="text-xs text-muted">{p.code}</p></div>
-                <Button size="sm" icon={FiPlus} onClick={() => assignProject.mutate(p.projectId)}>Assign</Button>
-              </div>
-            ))}
-          </Card>
-        </div>
+        <Card>
+          <CardHeader title="Assigned Projects" />
+          {clientProjects.length === 0 ? <EmptyState title="No projects assigned" /> : clientProjects.map((p) => (
+            <div key={p.projectId} className="flex items-center justify-between rounded-xl border border-app p-3">
+              <div><p className="text-sm font-medium">{p.name}</p><p className="text-xs text-muted">{p.code} · {p.status}</p></div>
+              <Button variant="ghost" size="sm" icon={FiTrash2} onClick={() => assignProject.mutate(p.projectId)}>Unassign</Button>
+            </div>
+          ))}
+        </Card>
       )}
 
       {tab === 'Team' && (
@@ -210,21 +197,6 @@ export default function ClientDetail() {
             </div>
           </div>
         </Card>
-      )}
-
-      {tab === 'Progress' && (
-        <div className="space-y-4">
-          {clientProjects.map((p) => (
-            <Card key={p.projectId}>
-              <CardHeader title={p.name} subtitle={`${p.progress}% complete`} />
-              <div className="flex items-center gap-3">
-                <div className="flex-1"><ProgressBar value={p.progress} showLabel /></div>
-                <Input type="number" className="w-24" defaultValue={p.progress} id={`prog-${p.projectId}`} />
-                <Button size="sm" onClick={() => updProgress.mutate({ pid: p.projectId, progress: Number(document.getElementById(`prog-${p.projectId}`).value) })}>Update</Button>
-              </div>
-            </Card>
-          ))}
-        </div>
       )}
 
       {tab === 'Messages' && (

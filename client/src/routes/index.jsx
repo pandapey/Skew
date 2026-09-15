@@ -173,6 +173,7 @@ export const router = createBrowserRouter([
       route('/hosting/:id/edit', HostingForm, [ROLES.ADMIN, ROLES.MANAGER]),
       route('/attendance', Attendance),
       route('/attendance/reports', AttendanceReports, [ROLES.ADMIN, ROLES.MANAGER]),
+      route('/attendance/my-report', MyAttendanceReport),
       route('/attendance/shifts', AttendanceShifts, [ROLES.ADMIN, ROLES.MANAGER]),
       route('/attendance/holidays', AttendanceHolidays, [ROLES.ADMIN, ROLES.MANAGER]),
 

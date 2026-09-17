@@ -992,7 +992,7 @@ export const updateProjectComment = asyncHandler(async (req, res) => {
   const body = String(req.body?.body || '').trim()
   if (!body) throw new ApiError(400, 'Comment cannot be empty')
   const author = req.user?.name || 'Client'
-  const comment = await projectSvc.updateComment(req.params.commentId, { body }, author)
+  const comment = await projectSvc.updateComment(req.params.commentId, { body }, author, req.user)
   const emitPid = resolved.project ? String(resolved.project._id) : resolved.legacy.projectId
   emitToClient(clientId, 'client:project-comment', { projectId: emitPid, comment })
   res.json(comment)
@@ -1003,7 +1003,7 @@ export const deleteProjectComment = asyncHandler(async (req, res) => {
   const resolved = await resolvePortalProject(clientId, req.params.id)
   if (!resolved || (!resolved.project && !resolved.legacy)) throw new ApiError(404, 'Project not found')
   const author = req.user?.name || 'Client'
-  await projectSvc.deleteComment(req.params.commentId, author, req.user?.role)
+  await projectSvc.deleteComment(req.params.commentId, author, req.user?.role, req.user)
   const emitPid = resolved.project ? String(resolved.project._id) : resolved.legacy.projectId
   emitToClient(clientId, 'client:project-comment', { projectId: emitPid, deletedId: req.params.commentId })
   res.json({ deleted: true })

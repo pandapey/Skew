@@ -18,6 +18,22 @@ const daysBetween = (from, to) => resolveLeaveDuration({ from, to }).days
 const withId = (doc) => (doc ? { ...doc, id: String(doc._id) } : doc)
 const withIds = (docs) => docs.map(withId)
 
+// empCodes survive renames: match requests by code with name fallback.
+// Pure shape helper — keeps "my" queries working after a name change.
+function withEmployeeFallback(filter, user) {
+  if (!user?.empCode || filter.employee == null) return filter
+  const ors = [{ employee: filter.employee }, { empCode: user.empCode }]
+  delete filter.employee
+  if (filter.$or) {
+    const search = filter.$or
+    delete filter.$or
+    filter.$and = [...(filter.$and || []), { $or: ors }, { $or: search }]
+  } else {
+    filter.$or = ors
+  }
+  return filter
+}
+
 // In-app fan-out to everyone who can approve (Admin/Manager), excluding
 // the applicant. This replaces the old no-op email stub below it.
 async function notifyApprovers(payload, excludeName) {
@@ -154,8 +170,11 @@ async function assertDatesAreRequestable(user, from, to) {
   }
 
   const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  const who = user?.empCode
+    ? { $or: [{ employee: user.name }, { empCode: user.empCode }] }
+    : { employee: user.name }
   const marked = await Attendance.find({
-    employee: user.name,
+    ...who,
     date: { $gte: iso(start), $lte: iso(end) },
   }).select('date status checkIn checkInAt').lean()
 
@@ -178,7 +197,7 @@ async function assertDatesAreRequestable(user, from, to) {
   }
 
   const clashes = await LeaveRequest.find({
-    employee: user.name,
+    ...who,
     status: { $in: ['Pending', 'Approved'] },
     from: { $lte: iso(end) },
     to: { $gte: iso(start) },
@@ -198,7 +217,7 @@ async function availableBalanceFor(user, typeName) {
   const [type, override, approved] = await Promise.all([
     LeaveType.findOne({ name: typeName }).lean(),
     LeaveBalance.findOne({ employee: user.name, type: typeName }).lean(),
-    LeaveRequest.find({ employee: user.name, type: typeName, status: 'Approved' }).select('days').lean(),
+    LeaveRequest.find(withEmployeeFallback({ employee: user.name, type: typeName, status: 'Approved' }, user)).select('days').lean(),
   ])
   if (!type) return 0
   const allocated = override && typeof override.allocated === 'number' && override.allocated > 0
@@ -224,7 +243,7 @@ export const leaveService = {
 
   async myRequests(user, query) {
     await expireStaleRequests()
-    return paginate(buildFilter({ ...query, employee: user.name }), query)
+    return paginate(withEmployeeFallback(buildFilter({ ...query, employee: user.name }), user), query)
   },
 
   async get(id, user) {
@@ -318,21 +337,24 @@ export const leaveService = {
     return withId(req.toObject())
   },
 
-  async hourlyUsage(employeeName, month) {
+  async hourlyUsage(employeeName, month, empCode = null) {
     const bounds = monthBounds(month)
     if (!bounds) return 0
-    const rows = await LeaveRequest.find({
-      employee: employeeName,
+    const base = {
       requestKind: 'Hourly Permission',
       status: { $in: ['Pending', 'Approved'] },
       from: { $gte: bounds.start, $lte: bounds.end },
-    }).select('hours').lean()
+    }
+    const filter = empCode
+      ? { ...base, $or: [{ employee: employeeName }, { empCode }] }
+      : { ...base, employee: employeeName }
+    const rows = await LeaveRequest.find(filter).select('hours').lean()
     return rows.reduce((sum, r) => sum + (Number(r.hours) || 0), 0)
   },
 
   async hourlyBalance(user, month) {
     const key = /^\d{4}-\d{2}$/.test(String(month || '')) ? String(month) : monthKeyOf(new Date())
-    const used = await this.hourlyUsage(user.name, key)
+    const used = await this.hourlyUsage(user.name, key, user.empCode)
     const allowance = HOURLY_PERMISSION_MONTHLY_HOURS
     return {
       month: key,
@@ -367,7 +389,7 @@ export const leaveService = {
     await assertDatesAreRequestable(user, date, date)
 
     const month = monthKeyOf(date)
-    const used = await this.hourlyUsage(user.name, month)
+    const used = await this.hourlyUsage(user.name, month, user.empCode)
     const remaining = HOURLY_PERMISSION_MONTHLY_HOURS - used
     if (hours > remaining) {
       throw new ApiError(
@@ -426,7 +448,10 @@ export const leaveService = {
       // Re-check allocation at decision time (balances may have moved since apply).
       const reqType = await LeaveType.findOne({ name: req.type }).lean()
       if (reqType && reqType.paid !== false) {
-        const available = await availableBalanceFor({ name: req.employee }, req.type)
+        const reqUser = await User.findOne({ name: req.employee }).select('name empCode').lean()
+        const available = await availableBalanceFor(
+          { name: req.employee, empCode: reqUser?.empCode }, req.type,
+        )
         if (available < req.days) throw new ApiError(422, 'Insufficient balance to approve')
       }
       const balance = await LeaveBalance.findOne({ employee: req.employee, type: req.type })
@@ -532,9 +557,12 @@ export const leaveService = {
   },
 
   async balances(user) {
+    const decidedFilter = withEmployeeFallback(
+      { employee: user.name, status: { $in: ['Approved', 'Pending'] } }, user,
+    )
     const [allTypes, decided, overrides] = await Promise.all([
       LeaveType.find({ active: { $ne: false } }).sort({ name: 1 }).lean(),
-      LeaveRequest.find({ employee: user.name, status: { $in: ['Approved', 'Pending'] } }).lean(),
+      LeaveRequest.find(decidedFilter).lean(),
       LeaveBalance.find({ employee: user.name }).lean(),
     ])
     const approved = decided.filter((r) => r.status === 'Approved')

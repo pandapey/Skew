@@ -12,7 +12,7 @@ const DEFAULTS = {
 }
 
 export function TaskModal({
-  open, onClose, onSubmit, editing, saving, assignees = [], sprints, projectName,
+  open, onClose, onSubmit, editing, saving, assignees = [], sprints,
   employeeMode = false, projects = [],
 }) {
   const form = useForm({ resolver: zodResolver(taskSchema), defaultValues: DEFAULTS })
@@ -27,7 +27,6 @@ export function TaskModal({
   }, [open, editing])
 
   const isBug = form.watch('type') === 'Bug'
-  const selectedProject = projects.find((p) => p.id === form.watch('project'))
 
   const assigneeOptions = [
     { value: '', label: 'Unassigned' },
@@ -63,7 +62,7 @@ export function TaskModal({
     <Modal
       open={open}
       onClose={onClose}
-      title={`${editing ? 'Edit' : 'Add'} Task${projectName || selectedProject?.name ? ` · ${projectName || selectedProject.name}` : ''}`}
+      title={`${editing ? 'Edit' : 'Add'} Task`}
       size="lg"
       footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button loading={saving} onClick={requestSubmit}>{editing ? 'Save' : 'Create'}</Button></>}
     >
@@ -71,8 +70,8 @@ export function TaskModal({
         <div className="sm:col-span-2">
           <Select
             label="Project"
-            placeholder="No Project / General Task"
-            options={[{ value: '', label: 'No Project / General Task' }, ...projects.map((p) => ({ value: p.id, label: p.name }))]}
+            placeholder="General Task"
+            options={[{ value: '', label: 'General Task' }, ...projects.map((p) => ({ value: p.id, label: p.name }))]}
             {...form.register('project')}
           />
         </div>

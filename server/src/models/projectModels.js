@@ -7,6 +7,7 @@ const memberSchema = new Schema({
   name: { type: String, required: true },
   role: { type: String, default: 'Member' },
   avatar: String,
+  userId: { type: Schema.Types.ObjectId, ref: 'User', default: null, index: true },
 }, { _id: false })
 
 const projectSchema = new Schema({
@@ -16,6 +17,7 @@ const projectSchema = new Schema({
   clientId: { type: String, index: true, sparse: true, default: '' },
   description: String,
   lead: { type: String, index: true },
+  leadId: { type: Schema.Types.ObjectId, ref: 'User', default: null, index: true },
   members: [memberSchema],
   priority: { type: String, enum: ['Low', 'Medium', 'High', 'Urgent'], default: 'Medium', index: true },
   status: { type: String, enum: ['Planning', 'Active', 'On Hold', 'Completed', 'Cancelled'], default: 'Planning', index: true },
@@ -79,6 +81,7 @@ sprintSchema.index({ name: 'text', goal: 'text' })
 
 const taskSubmissionSchema = new Schema({
   by: { type: String, required: true },
+  byId: { type: Schema.Types.ObjectId, ref: 'User', default: null, index: true },
   comment: { type: String, required: true, trim: true },
   at: { type: Date, default: Date.now },
   attachment: {
@@ -118,6 +121,7 @@ const taskSchema = new Schema({
   priority: { type: String, enum: ['Low', 'Medium', 'High', 'Urgent'], default: 'Medium', index: true },
   severity: { type: String, enum: ['Minor', 'Major', 'Critical', 'Blocker'], default: 'Major' },
   assignee: String,
+  assigneeId: { type: Schema.Types.ObjectId, ref: 'User', default: null, index: true },
   reporter: String,
   storyPoints: { type: Number, default: 0 },
   progress: { type: Number, min: 0, max: 100, default: 0 },
@@ -136,6 +140,7 @@ const taskSchema = new Schema({
   submissionHistory: { type: [taskSubmissionSchema], default: [] },
   reviewHistory: { type: [taskReviewSchema], default: [] },
   assignedBy: { type: String, default: null },
+  assignedById: { type: Schema.Types.ObjectId, ref: 'User', default: null, index: true },
 
   assignmentStatus: {
     type: String,
@@ -179,6 +184,7 @@ const commentSchema = new Schema({
   project: { type: Schema.Types.ObjectId, ref: 'Project', index: true },
   task: { type: Schema.Types.ObjectId, ref: 'ProjectTask', default: null, index: true },
   author: { type: String, required: true },
+  authorId: { type: Schema.Types.ObjectId, ref: 'User', default: null, index: true },
   body: { type: String, required: true },
   viaClientPortal: { type: Boolean, default: false },
   edited: { type: Boolean, default: false },

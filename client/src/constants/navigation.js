@@ -1,6 +1,6 @@
 import {
   FiHome, FiUsers, FiClock, FiCalendar, FiBriefcase,
-  FiTrello, FiDollarSign, FiBell, FiFolder, FiPieChart,
+  FiTrello, FiDollarSign, FiBell, FiPieChart,
   FiSettings, FiMessageSquare, FiCreditCard,
   FiVideo, FiSpeaker, FiUser, FiCheckSquare, FiGlobe, FiZap,
 } from 'react-icons/fi'
@@ -24,7 +24,6 @@ export const NAV_ITEMS = [
   { key: 'task-reviews', label: 'Task Reviews', path: '/projects/reviews', icon: FiCheckSquare,
     roles: [ROLES.ADMIN, ROLES.MANAGER] },
   { key: 'calendar', label: 'Calendar', path: '/calendar', icon: FiCalendar, roles: A },
-  { key: 'files', label: 'Files', path: '/files', icon: FiFolder, roles: A },
   { key: 'announcements', label: 'Announcements', path: '/announcements', icon: FiSpeaker, roles: A, badge: 'announcements' },
   { key: 'chat', label: 'Chat', path: '/chat', icon: FiMessageSquare, roles: A, badge: 'chat' },
   { key: 'notifications', label: 'Notifications', path: '/notifications', icon: FiBell, roles: A, badge: 'notifications' },

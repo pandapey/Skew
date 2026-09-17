@@ -77,10 +77,6 @@ export default function TaskReview() {
   const [projectFilter, setProjectFilter] = useState('')
   const { data: assignees = [] } = useQuery({ queryKey: ['project-assignees'], queryFn: () => projectApi.assignees() })
 
-  // PHASE: EMPLOYEE TASK REVIEW — widget counts for review OUTCOMES (Approved /
-  // Rejected / Reassigned) instead of the "with attachments" convenience count.
-  // The full task list carries submissionStatus + assignmentStatus, so the
-  // widgets reflect decisions made across the user's accessible scope.
   const { data: allTasks = [] } = useQuery({
     queryKey: ['tasks', 'all'],
     queryFn: () => projectApi.tasks(),
@@ -92,12 +88,14 @@ export default function TaskReview() {
   }), [allTasks])
 
   const filteredTasks = useMemo(
-    () => (projectFilter ? tasks.filter((t) => t.project === projectFilter) : tasks),
+    () => {
+      if (!projectFilter) return tasks
+      if (projectFilter === 'general') return tasks.filter((t) => !t.project)
+      return tasks.filter((t) => t.project === projectFilter)
+    },
     [tasks, projectFilter],
   )
 
-  // Row index -> serial number, keyed by task object identity so the S.No
-  // column matches the exact rows the DataTable renders (filtered by project).
   const snoMap = useMemo(
     () => new Map(filteredTasks.map((t, i) => [t, i + 1])),
     [filteredTasks],
@@ -131,10 +129,6 @@ const createMut = useMutation({
     onError: (err) => toast.error(err?.response?.data?.message || 'Could not create this task'),
   })
 
-  // PHASE: EMPLOYEE TASK REVIEW — the Priority column is REMOVED for the
-  // Employee review surface (/my-tasks/review). Priority stays on the manager
-  // review queue (/projects/reviews) and everywhere task creation/assignment
-  // uses it; only the Employee view omits the column.
   const isEmployeeReview = user?.role === ROLES.EMPLOYEE
   const columns = [
     { key: 'sno', header: 'S.No', render: (t) => (
@@ -145,7 +139,7 @@ const createMut = useMutation({
         <span className="font-medium">{t.title}</span>
       </div>
     ) },
-    { key: 'project', header: 'Project', render: (t) => <span className="text-muted">{projectMap[t.project] || '\u2014'}</span> },
+    { key: 'project', header: 'Project', render: (t) => (t.project ? <span className="text-muted">{projectMap[t.project] || 'Unassigned'}</span> : <span className="inline-flex items-center rounded-full bg-accent/10 px-2 py-0.5 text-xs font-semibold text-accent">General Task</span>) },
     { key: 'assignee', header: 'Submitted By', render: (t) => t.submission?.by || t.assignee || '\u2014' },
     ...(!isEmployeeReview
       ? [{ key: 'priority', header: 'Priority', render: (t) => <Badge tone={PRIORITY_TONE[t.priority]}>{t.priority}</Badge> }]
@@ -225,7 +219,7 @@ const createMut = useMutation({
             label="Project"
             value={projectFilter}
             onChange={(e) => setProjectFilter(e.target.value)}
-            options={[{ value: '', label: 'All projects' }, ...projects.map((p) => ({ value: p.id, label: p.name }))]}
+            options={[{ value: '', label: 'All projects' }, { value: 'general', label: 'No Project / General Tasks' }, ...projects.map((p) => ({ value: p.id, label: p.name }))]}
             className="w-full sm:w-56"
           />
           {projectFilter && (

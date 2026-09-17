@@ -106,11 +106,26 @@ const DESIGNATION_BY_DEPT = {
 const DEPARTMENTS = ['Engineering', 'Sales', 'Human Resources', 'Finance', 'Marketing', 'Design', 'Operations', 'Support', 'Legal']
 
 async function seed() {
+  // DANGER: this wipes every collection below. Never run against production
+  // by accident — production requires an explicit opt-in.
+  if (process.env.NODE_ENV === 'production' && process.env.ALLOW_SEED !== 'true') {
+    console.error('Refusing to run seed in production. Set ALLOW_SEED=true to override.');
+    process.exit(1);
+  }
+  // Override the well-known demo passwords via env (recommended everywhere
+  // except throwaway local dev).
+  const seedPassword = process.env.SEED_PASSWORD;
+  const usersToCreate = seedPassword
+    ? users.map((u) => ({ ...u, password: seedPassword }))
+    : users;
+  if (!seedPassword) {
+    console.warn('Using default demo passwords — set SEED_PASSWORD to override them.');
+  }
   await connectDB(process.env.MONGO_URI)
   await ensureIndexes()
 
   await User.deleteMany({})
-  for (const u of users) await User.create(u)
+  for (const u of usersToCreate) await User.create(u)
   const userDocs = await User.find({})
   console.log(` Seeded ${userDocs.length} users`)
 

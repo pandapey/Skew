@@ -4,7 +4,7 @@ import { User } from '../models/User.js'
 import { Employee } from '../models/Employee.js'
 import { ApiError } from '../utils/asyncHandler.js'
 import { loadShiftContext, resolveShiftConfig } from '../utils/leaveExpiry.js'
-import { computeTodayStatusMap, ATT_STATUS_ABSENT, ATT_STATUS_ON_LEAVE, ATT_STATUS_NOT_MARKED } from '../utils/attendanceStatus.js'
+import { computeTodayStatusMap, backfillAbsentDays, ATT_STATUS_ABSENT, ATT_STATUS_ON_LEAVE, ATT_STATUS_NOT_MARKED } from '../utils/attendanceStatus.js'
 import { countWorkingDays, toDateKey, parseDate } from '../utils/leaveDays.js'
 import { notifyUsersByName } from './notificationService.js'
 import { emitResource } from '../realtime/index.js'
@@ -373,29 +373,11 @@ export const attendanceService = {
     const { from, to } = resolveRange(query)
     const records = await Attendance.find({ employee: user.name, date: { $gte: from, $lte: to } }).select('date status -_id').lean()
     const map = records.reduce((acc, r) => { acc[r.date] = r.status; return acc }, {})
-    // Absent days never create Attendance records, so the mini calendar
-    // stayed blank instead of red. Backfill unrecorded elapsed working
-    // days as Absent (Sundays/holidays are painted by the client itself).
-    const todayKey = today()
-    const lastKey = to < todayKey ? to : todayKey
-    if (lastKey >= from) {
-      const holidayDocs = await Holiday.find({ date: { $gte: from, $lte: lastKey } }).select('date -_id').lean()
-      const holidaySet = new Set(holidayDocs.map((h) => toDateKey(h.date)).filter(Boolean))
-      const cursor = parseDate(from)
-      const end = parseDate(lastKey)
-      if (cursor && end) {
-        cursor.setHours(0, 0, 0, 0)
-        end.setHours(0, 0, 0, 0)
-        while (cursor <= end) {
-          const key = toDateKey(cursor)
-          if (key && !map[key] && cursor.getDay() !== 0 && !holidaySet.has(key)) {
-            map[key] = 'Absent'
-          }
-          cursor.setDate(cursor.getDate() + 1)
-        }
-      }
-    }
-    return map
+    // Absent days never create Attendance records, so backfill unrecorded
+    // elapsed working days as Absent — otherwise the mini calendar stays blank.
+    const holidayDocs = await Holiday.find({ date: { $gte: from, $lte: to } }).select('date -_id').lean()
+    const holidaySet = new Set(holidayDocs.map((h) => toDateKey(h.date)).filter(Boolean))
+    return backfillAbsentDays(map, from, to, holidaySet, today())
   },
 
   async stats(query = {}) {

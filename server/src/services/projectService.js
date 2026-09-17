@@ -13,6 +13,7 @@ import { notifyUsersByName } from './notificationService.js'
 import { emitToClient } from '../realtime/index.js'
 import { buildProjectTeam } from '../utils/team.js'
 import { saveBufferToGridFS, deleteGridFSFile, isGridFsId } from '../utils/mongoStorage.js'
+import { resolveStaffIdentity, idOrNameClause, isIdentityHolder } from './identityLink.js'
 
 export const withId = (doc) => (doc ? { ...doc, id: String(doc._id) } : doc)
 export const withIds = (docs) => docs.map(withId)
@@ -36,28 +37,47 @@ export const PROJECT_FULL_ACCESS = ['Admin', 'Manager']
 
 export const TASK_ASSIGNEE_ROLES = ['Employee']
 
+// { name, userId } snapshot for ID-first matching with name fallback.
+const identityOf = (user) => ({
+  name: user?.name || null,
+  userId: user?._id ? String(user._id) : null,
+})
+
 export function projectScopeFilter(user) {
   if (!user || PROJECT_FULL_ACCESS.includes(user.role)) return {}
-  return { $or: [{ lead: user.name }, { 'members.name': user.name }] }
+  const id = identityOf(user)
+  return {
+    $or: [
+      idOrNameClause('lead', 'leadId', id),
+      idOrNameClause('members.name', 'members.userId', id),
+    ],
+  }
 }
 
 export function canAccessProject(project, user) {
   if (!user || PROJECT_FULL_ACCESS.includes(user.role)) return true
-  const name = user?.name
-  return project.lead === name || (project.members || []).some((m) => m.name === name)
+  if (isIdentityHolder(project.lead, project.leadId, user)) return true
+  return (project.members || []).some((m) => isIdentityHolder(m.name, m.userId, user))
 }
 
 export async function hasProjectAccess(project, user) {
   if (canAccessProject(project, user)) return true
-  if (!user?.name) return false
-  const assigned = await ProjectTask.exists({ project: project._id, assignee: user.name })
+  if (!user?.name && !user?._id) return false
+  const assigned = await ProjectTask.exists({
+    project: project._id,
+    ...idOrNameClause('assignee', 'assigneeId', identityOf(user)),
+  })
   return !!assigned
 }
 
 export async function accessibleProjectFilter(user) {
   if (!user || PROJECT_FULL_ACCESS.includes(user.role)) return {}
-  const taskProjectIds = await ProjectTask.find({ assignee: user.name }).distinct('project')
-  const or = [{ lead: user.name }, { 'members.name': user.name }]
+  const id = identityOf(user)
+  const taskProjectIds = await ProjectTask.find(idOrNameClause('assignee', 'assigneeId', id)).distinct('project')
+  const or = [
+    idOrNameClause('lead', 'leadId', id),
+    idOrNameClause('members.name', 'members.userId', id),
+  ]
   if (taskProjectIds.length) or.push({ _id: { $in: taskProjectIds } })
   return { $or: or }
 }
@@ -86,6 +106,38 @@ export function projectAssigneePool(project) {
   ].filter(Boolean))]
 }
 
+// Resolves lead/member display names to stable user IDs (rename-safe
+// access checks). Best-effort: failures leave IDs null and name matching
+// keeps working.
+export async function attachProjectIdentityIds(project) {
+  try {
+    const doc = await Project.findById(project?._id || project)
+    if (!doc) return null
+    const toOid = (userId) => (userId && mongoose.isValidObjectId(userId)
+      ? new mongoose.Types.ObjectId(String(userId))
+      : null)
+    let changed = false
+    if (doc.lead) {
+      const id = await resolveStaffIdentity(doc.lead).catch(() => null)
+      const oid = toOid(id?.userId)
+      if (String(doc.leadId || '') !== String(oid || '')) { doc.leadId = oid; changed = true }
+    } else if (doc.leadId) {
+      doc.leadId = null
+      changed = true
+    }
+    for (const m of doc.members || []) {
+      if (!m?.name) continue
+      const id = await resolveStaffIdentity(m.name).catch(() => null)
+      const oid = toOid(id?.userId)
+      if (String(m.userId || '') !== String(oid || '')) { m.userId = oid; changed = true }
+    }
+    if (changed) await doc.save()
+    return doc
+  } catch {
+    return null
+  }
+}
+
 export function isProjectLead(project, user) {
   return Boolean(user?.name) && project?.lead === user.name
 }
@@ -93,19 +145,18 @@ export function isProjectLead(project, user) {
 // Pure permission rule for task reviews (also unit-tested). General Tasks
 // (project == null) can be reviewed by Admin/Manager, the assigner, or the
 // assignee — which is what allows approving your own General Task.
+// Identity matching is ID-first with display-name fallback, so renames
+// never lock anyone out.
 export function canReviewTask(task, project, user) {
   const privileged = PROJECT_FULL_ACCESS.includes(user?.role)
   const allowed =
     privileged ||
-    user?.name === task.assignedBy ||
-    user?.name === task.assignee ||
-    (project && isProjectLead(project, user))
+    isIdentityHolder(task.assignedBy, task.assignedById, user) ||
+    isIdentityHolder(task.assignee, task.assigneeId, user) ||
+    (project ? isIdentityHolder(project.lead, project.leadId, user) : false)
   if (!allowed) return { allowed: false, reason: 'Only the project lead who assigned this task can review it' }
-  if (
-    user?.name === task.submission?.by &&
-    !privileged &&
-    user?.name !== task.assignee
-  ) {
+  const submittedBySelf = isIdentityHolder(task.submission?.by, task.submission?.byId, user)
+  if (submittedBySelf && !privileged && !isIdentityHolder(task.assignee, task.assigneeId, user)) {
     return { allowed: false, reason: 'You cannot review your own submission' }
   }
   return { allowed: true }
@@ -442,9 +493,9 @@ export const projectService = {
     const project = task.project ? await Project.findById(task.project).lean() : null
     const canAttach =
       PROJECT_FULL_ACCESS.includes(user?.role) ||
-      user?.name === task.assignee ||
-      user?.name === task.assignedBy ||
-      (project && isProjectLead(project, user))
+      isIdentityHolder(task.assignee, task.assigneeId, user) ||
+      isIdentityHolder(task.assignedBy, task.assignedById, user) ||
+      (project && isIdentityHolder(project.lead, project.leadId, user))
     if (!canAttach) throw new ApiError(403, 'You do not have permission to attach files to this task')
 
     const kind = file.mimetype.startsWith('image/')
@@ -491,7 +542,7 @@ export const projectService = {
   async startTask(id, user) {
     const task = await ProjectTask.findById(id)
     if (!task) throw new ApiError(404, 'Task not found')
-    if (task.assignee !== user?.name) {
+    if (!isIdentityHolder(task.assignee, task.assigneeId, user)) {
       throw new ApiError(403, 'You can only start a task that is assigned to you')
     }
     if (task.submissionStatus === 'Approved' || task.status === 'Done') {
@@ -512,7 +563,7 @@ export const projectService = {
   async pauseTask(id, { reason } = {}, user) {
     const task = await ProjectTask.findById(id)
     if (!task) throw new ApiError(404, 'Task not found')
-    if (task.assignee !== user?.name) {
+    if (!isIdentityHolder(task.assignee, task.assigneeId, user)) {
       throw new ApiError(403, 'You can only pause a task that is assigned to you')
     }
     if (!task.startedAt) {
@@ -536,7 +587,7 @@ export const projectService = {
   async resumeTask(id, user) {
     const task = await ProjectTask.findById(id)
     if (!task) throw new ApiError(404, 'Task not found')
-    if (task.assignee !== user?.name) {
+    if (!isIdentityHolder(task.assignee, task.assigneeId, user)) {
       throw new ApiError(403, 'You can only resume a task that is assigned to you')
     }
     if (!task.pausedAt) {
@@ -555,7 +606,7 @@ export const projectService = {
   async setTaskStatus(id, status, user) {
     const task = await ProjectTask.findById(id)
     if (!task) throw new ApiError(404, 'Task not found')
-    if (task.assignee !== user?.name) {
+    if (!isIdentityHolder(task.assignee, task.assigneeId, user)) {
       throw new ApiError(403, 'You can only change the status of a task that is assigned to you')
     }
     if (task.submissionStatus === 'Submitted') {
@@ -602,7 +653,7 @@ export const projectService = {
       task.completedAt = now
       task.durationSec = task.startedAt ? activeSeconds(task, now) : 0
       const text = 'Completed — awaiting approval'
-      const entry = { by: user.name, comment: text, at: new Date(), attachment: { fileId: null, name: null, url: null } }
+      const entry = { by: user.name, byId: user._id || null, comment: text, at: new Date(), attachment: { fileId: null, name: null, url: null } }
       task.submission = entry
       task.submissionHistory.push(entry)
       task.submissionStatus = 'Submitted'
@@ -660,11 +711,22 @@ export const projectService = {
       }
     }
 
-    const { startedAt, completedAt, durationSec, pausedAt, pauseIntervals, history, project: _proj, ...clean } = body
+    const { startedAt, completedAt, durationSec, pausedAt, pauseIntervals, history, project: _proj, assigneeId: _aid, assignedById: _bid, ...clean } = body
+    // Stable identity refs alongside display names (rename-safe).
+    const assigneeIdentity = clean.assignee ? await resolveStaffIdentity(clean.assignee).catch(() => null) : null
+    const assignerIdentity = user?._id
+      ? { userId: String(user._id) }
+      : (actor ? await resolveStaffIdentity(actor).catch(() => null) : null)
     const task = await ProjectTask.create({
       ...clean,
       project: projectId ? project._id : null,
       assignedBy: actor,
+      assignedById: assignerIdentity?.userId && mongoose.isValidObjectId(assignerIdentity.userId)
+        ? new mongoose.Types.ObjectId(assignerIdentity.userId)
+        : null,
+      assigneeId: assigneeIdentity?.userId && mongoose.isValidObjectId(assigneeIdentity.userId)
+        ? new mongoose.Types.ObjectId(assigneeIdentity.userId)
+        : null,
       reporter: body.reporter || actor,
       submissionStatus: 'Not Submitted',
     })
@@ -732,13 +794,19 @@ export const projectService = {
       }
     }
 
-    const { startedAt, completedAt, durationSec, pausedAt, pauseIntervals, history, ...safe } = normalizedPatch
+    const { startedAt, completedAt, durationSec, pausedAt, pauseIntervals, history, assigneeId: _aid, assignedById: _bid, ...safe } = normalizedPatch
     const task = await ProjectTask.findByIdAndUpdate(id, safe, { new: true, runValidators: true })
     if (!task) throw new ApiError(404, 'Task not found')
 
     if (normalizedPatch.assignee !== undefined && normalizedPatch.assignee !== existing.assignee) {
       pushHistory(task, 'Reassigned', actor, { from: existing.assignee || null, to: normalizedPatch.assignee || null })
       task.assignmentStatus = 'Reassigned'
+      const newIdentity = normalizedPatch.assignee
+        ? await resolveStaffIdentity(normalizedPatch.assignee).catch(() => null)
+        : null
+      task.assigneeId = newIdentity?.userId && mongoose.isValidObjectId(newIdentity.userId)
+        ? new mongoose.Types.ObjectId(newIdentity.userId)
+        : null
       task.startedAt = null
       task.completedAt = null
       task.durationSec = 0
@@ -771,7 +839,7 @@ export const projectService = {
     const task = await ProjectTask.findById(id)
     if (!task) throw new ApiError(404, 'Task not found')
 
-    if (task.assignee !== user?.name) {
+    if (!isIdentityHolder(task.assignee, task.assigneeId, user)) {
       throw new ApiError(403, 'You can only submit a task that is assigned to you')
     }
     if (task.submissionStatus === 'Submitted') {
@@ -796,7 +864,7 @@ export const projectService = {
       attachmentRef = { fileId: file._id, name: file.name, url: file.url }
     }
 
-    const entry = { by: user.name, comment: text, at: new Date(), attachment: attachmentRef }
+    const entry = { by: user.name, byId: user._id || null, comment: text, at: new Date(), attachment: attachmentRef }
     task.submission = entry
     task.submissionHistory.push(entry)
     task.submissionStatus = 'Submitted'
@@ -881,8 +949,13 @@ export const projectService = {
   },
 
   async reviewQueue(user) {
-    const or = [{ assignedBy: user?.name }, { assignee: user?.name, project: null }]
-    const ledProjects = await Project.find({ lead: user?.name }).select('_id').lean()
+    if (!user?.name && !user?._id) return []
+    const id = identityOf(user)
+    const assignedByClause = idOrNameClause('assignedBy', 'assignedById', id)
+    const assigneeClauses = idOrNameClause('assignee', 'assigneeId', id)
+    const assigneeList = assigneeClauses.$or ? assigneeClauses.$or : [assigneeClauses]
+    const or = [assignedByClause, ...assigneeList.map((c) => ({ ...c, project: null }))]
+    const ledProjects = await Project.find(idOrNameClause('lead', 'leadId', id)).select('_id').lean()
     if (ledProjects.length) or.push({ project: { $in: ledProjects.map((p) => p._id) } })
     if (PROJECT_FULL_ACCESS.includes(user?.role)) {
       return withIds(await ProjectTask.find({ submissionStatus: 'Submitted' }).sort({ 'submission.at': -1 }).lean())
@@ -906,6 +979,15 @@ export const projectService = {
       const v = scalarOrNull(query[k])
       if (v != null) filter[k] = v
     }
+    // Identity fields match ID-first with name fallback, so renames never
+    // hide tasks. Other names (e.g. admin filtering by someone else) stay
+    // exact matches.
+    const identityAnd = []
+    for (const k of ['assignee', 'assignedBy']) {
+      if (filter[k] == null || filter[k] !== user?.name || !user?._id) continue
+      delete filter[k]
+      identityAnd.push(idOrNameClause(k, `${k}Id`, identityOf(user)))
+    }
     // Handle General Task filter: project=general -> project null
     if (query.project === 'general' || query.project === 'General' || filter.project === 'general' || filter.project === 'General') {
       filter.project = null
@@ -915,6 +997,11 @@ export const projectService = {
       { title: { $regex: escapeRegex(query.search), $options: 'i' } },
       { description: { $regex: escapeRegex(query.search), $options: 'i' } },
     ]
+    if (identityAnd.length) {
+      const and = [...identityAnd]
+      if (filter.$or) { and.push({ $or: filter.$or }); delete filter.$or }
+      filter.$and = and
+    }
 
     const scope = await accessibleProjectFilter(user)
     const isPrivileged = !user || PROJECT_FULL_ACCESS.includes(user.role)
@@ -933,7 +1020,10 @@ export const projectService = {
 
   async myTasksCount(user) {
     const uid = String(user?._id || user?.id || '')
-    const filter = { assignee: user.name, viewedBy: { $ne: uid } }
+    const filter = { viewedBy: { $ne: uid } }
+    const mine = idOrNameClause('assignee', 'assigneeId', identityOf(user))
+    if (mine.$or) filter.$and = [mine]
+    else if (mine.assignee) filter.assignee = mine.assignee
     const scope = await accessibleProjectFilter(user)
     const isPrivileged = !user || PROJECT_FULL_ACCESS.includes(user.role)
     if (!isPrivileged && scope.$or) {
@@ -947,7 +1037,7 @@ export const projectService = {
   async markTaskViewed(id, user) {
     const task = await ProjectTask.findById(id)
     if (!task) throw new ApiError(404, 'Task not found')
-    if (task.assignee !== user?.name) {
+    if (!isIdentityHolder(task.assignee, task.assigneeId, user)) {
       throw new ApiError(403, 'You can only mark a task that is assigned to you as viewed')
     }
     const uid = String(user?._id || user?.id || '')
@@ -974,7 +1064,9 @@ export const projectService = {
 
     if (ownershipVerified) {
     } else if (mine || (!project && !privileged && filter.project !== null)) {
-      filter.assignee = user?.name
+      const mineClause = idOrNameClause('assignee', 'assigneeId', identityOf(user))
+      if (mineClause.$or) filter.$and = [mineClause]
+      else if (mineClause.assignee) filter.assignee = mineClause.assignee
     } else {
       const scope = await accessibleProjectFilter(user)
       const isPrivileged = privileged
@@ -1064,7 +1156,12 @@ export const projectService = {
     if (user && body?.project) {
       await projectQueryScope({ project: body.project }, user)
     }
-    const comment = await ProjectComment.create({ ...body, author: actor || body.author })
+    const { authorId: _ignoredAuthorId, ...cleanBody } = body || {}
+    const comment = await ProjectComment.create({
+      ...cleanBody,
+      author: actor || body.author,
+      authorId: user?._id || null,
+    })
     if (body.project) await logActivity(body.project, comment.author, 'commented', body.taskTitle)
 
     if (body.task) {
@@ -1109,10 +1206,11 @@ export const projectService = {
     return withId((await enrichComments([comment.toObject()]))[0])
   },
 
-  async updateComment(id, body, actor) {
+  async updateComment(id, body, actor, actorUser = null) {
     const comment = await ProjectComment.findById(id)
     if (!comment) throw new ApiError(404, 'Comment not found')
-    if (comment.author !== actor) throw new ApiError(403, 'You can only edit your own comment')
+    const own = isIdentityHolder(comment.author, comment.authorId, actorUser) || comment.author === actor
+    if (!own) throw new ApiError(403, 'You can only edit your own comment')
     comment.body = body
     comment.edited = true
     comment.editedAt = new Date()
@@ -1120,10 +1218,11 @@ export const projectService = {
     return withId((await enrichComments([comment.toObject()]))[0])
   },
 
-  async deleteComment(id, actor, actorRole) {
+  async deleteComment(id, actor, actorRole, actorUser = null) {
     const comment = await ProjectComment.findById(id)
     if (!comment) throw new ApiError(404, 'Comment not found')
-    if (comment.author !== actor && !PROJECT_FULL_ACCESS.includes(actorRole)) {
+    const own = isIdentityHolder(comment.author, comment.authorId, actorUser) || comment.author === actor
+    if (!own && !PROJECT_FULL_ACCESS.includes(actorRole)) {
       throw new ApiError(403, 'You can only delete your own comment')
     }
     await ProjectComment.deleteOne({ _id: id })

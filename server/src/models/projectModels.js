@@ -193,7 +193,7 @@ const commentSchema = new Schema({
 }, opts)
 
 const fileSchema = new Schema({
-  project: { type: Schema.Types.ObjectId, ref: 'Project', required: true, index: true },
+  project: { type: Schema.Types.ObjectId, ref: 'Project', default: null, index: true },
   name: { type: String, required: true },
   type: { type: String, default: 'file' },
   size: { type: Number, default: 0 },
@@ -209,7 +209,7 @@ const fileSchema = new Schema({
 fileSchema.index({ name: 'text' })
 
 const activitySchema = new Schema({
-  project: { type: Schema.Types.ObjectId, ref: 'Project', required: true, index: true },
+  project: { type: Schema.Types.ObjectId, ref: 'Project', default: null, index: true },
   actor: { type: String, required: true },
   action: { type: String, required: true },
   target: String,

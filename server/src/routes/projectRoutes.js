@@ -1,7 +1,9 @@
 import { Router } from 'express'
 import { Project, Sprint, Milestone, ProjectFile, ProjectActivity } from '../models/projectModels.js'
 import { createResourceService } from '../services/resourceFactory.js'
-import { projectService as svc, syncClientProject, createProjectWithClient, recordProjectAdvance, withId, withIds, hasProjectAccess, projectQueryScope, PROJECT_FULL_ACCESS, resolveProjectRef } from '../services/projectService.js'
+import { projectService as svc, syncClientProject, createProjectWithClient, recordProjectAdvance, withId,
+  withIds, hasProjectAccess, projectQueryScope, PROJECT_FULL_ACCESS, resolveProjectRef, attachProjectIdentityIds } from
+  '../services/projectService.js'
 import { projectValidators } from '../validators/projectValidators.js'
 import { asyncHandler, ApiError } from '../utils/asyncHandler.js'
 import { protect, authorize, blockClient } from '../middleware/auth.js'
@@ -302,8 +304,14 @@ router.get('/', asyncHandler(async (req, res) => res.json(await svc.listScoped(r
 router.get('/all', asyncHandler(async (req, res) => res.json(await svc.allScoped(req.user))))
 router.get('/:id', asyncHandler(async (req, res) => res.json(await svc.getScoped(req.params.id, req.user))))
 router.post('/', canWrite, projectValidators.project, asyncHandler(async (req, res) => {
-  const created = await projectStore.create(req.body)
+  // Client must not spoof stable identity refs — they are resolved server-side.
+  const { leadId: _leadId, ...reqBody } = req.body || {}
+  if (Array.isArray(reqBody.members)) {
+    reqBody.members = reqBody.members.map(({ userId: _u, ...m }) => m)
+  }
+  const created = await projectStore.create(reqBody)
   const obj = created.toObject ? created.toObject() : created
+  await attachProjectIdentityIds(created._id || created)
   await svc.notifyProjectCreated(obj, req.user?.name || 'System')
   await syncClientProject(obj, req.user?.name || 'System').catch(() => {})
   await recordProjectAdvance({
@@ -319,8 +327,13 @@ router.put('/:id', canWrite, asyncHandler(async (req, res) => {
   const resolved = await resolveProjectRef(req.params.id)
   if (!resolved) throw new ApiError(404, 'Project not found')
   const before = await Project.findById(resolved._id).lean()
-  const updated = await projectStore.update(resolved._id, req.body)
+  const { leadId: _leadId2, ...reqPatch } = req.body || {}
+  if (Array.isArray(reqPatch.members)) {
+    reqPatch.members = reqPatch.members.map(({ userId: _u, ...m }) => m)
+  }
+  const updated = await projectStore.update(resolved._id, reqPatch)
   const obj = updated.toObject ? updated.toObject() : updated
+  await attachProjectIdentityIds(resolved._id)
   if (before) await svc.notifyMembersChanged(before, obj, req.user?.name || 'System')
   await syncClientProject(obj, req.user?.name || 'System').catch(() => {})
   res.json(withId(obj))

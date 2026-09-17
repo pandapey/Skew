@@ -27,6 +27,12 @@ const today = todayIST
 const nowHMS = nowHMSIST
 const nowEpoch = () => Math.floor(Date.now() / 1000)
 
+// ID-first matching with name fallback: empCodes survive renames, so
+// history/summary/calendar keep working after a name change.
+const employeeOrCode = (user) => (user?.empCode
+  ? { $or: [{ employee: user.name }, { empCode: user.empCode }] }
+  : { employee: user.name })
+
 const toMins = (hm) => {
   if (!hm) return 0
   const [h, m] = hm.split(':').map(Number)
@@ -134,7 +140,7 @@ function resolveRange(query = {}) {
 export const attendanceService = {
   async myHistory(user, query) {
     const { status, page = 1, limit = 8 } = query
-    const filter = { employee: user.name }
+    const filter = { ...employeeOrCode(user) }
     if (status) filter.status = status
     const pageNum = Math.max(1, Number(page))
     const limitNum = Math.min(100, Number(limit))
@@ -147,7 +153,7 @@ export const attendanceService = {
 
   async mySummary(user, query = {}) {
     const { from, to } = resolveRange(query)
-    const records = await Attendance.find({ employee: user.name, date: { $gte: from, $lte: to } }).lean()
+    const records = await Attendance.find({ ...employeeOrCode(user), date: { $gte: from, $lte: to } }).lean()
     const worked = records.filter((r) => (r.workingHours || 0) > 0)
     const workingDays = worked.length
     const totalWorked = +worked.reduce((s, r) => s + (r.workingHours || 0), 0).toFixed(1)
@@ -371,7 +377,7 @@ export const attendanceService = {
 
   async calendar(user, query = {}) {
     const { from, to } = resolveRange(query)
-    const records = await Attendance.find({ employee: user.name, date: { $gte: from, $lte: to } }).select('date status -_id').lean()
+    const records = await Attendance.find({ ...employeeOrCode(user), date: { $gte: from, $lte: to } }).select('date status -_id').lean()
     const map = records.reduce((acc, r) => { acc[r.date] = r.status; return acc }, {})
     // Absent days never create Attendance records, so backfill unrecorded
     // elapsed working days as Absent — otherwise the mini calendar stays blank.

@@ -20,7 +20,6 @@ import attendanceRoutes from './routes/attendanceRoutes.js'
 import leaveRoutes from './routes/leaveRoutes.js'
 import projectRoutes from './routes/projectRoutes.js'
 import financeRoutes from './routes/financeRoutes.js'
-import fileRoutes from './routes/fileRoutes.js'
 import reportRoutes from './routes/reportRoutes.js'
 import notificationRoutes from './routes/notificationRoutes.js'
 import calendarRoutes from './routes/calendarRoutes.js'
@@ -94,11 +93,6 @@ app.use(
 app.use(
   '/api/finance',
   withEmit(financeRoutes, 'finance')
-)
-
-app.use(
-  '/api/files',
-  withEmit(fileRoutes, 'files')
 )
 
 app.use('/api/reports', reportRoutes)

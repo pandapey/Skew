@@ -2,6 +2,8 @@ import 'dotenv/config'
 process.env.TZ = process.env.TZ || 'Asia/Kolkata'
 import express from 'express'
 import cors from 'cors'
+import helmet from 'helmet'
+import rateLimit from 'express-rate-limit'
 import morgan from 'morgan'
 import dotenv from 'dotenv'
 import path from 'path'
@@ -41,6 +43,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const app = express()
 
 app.set('trust proxy', 1)
+app.use(helmet())
 app.use(cors(corsOptions))
 // Explicit preflight handler (Express 4 + cors already handles OPTIONS,
 // this guarantees 204 + headers even if a route is missing).
@@ -62,6 +65,19 @@ app.get('/api/health', (req, res) => {
     service: 'Skew Enterprise Hub API',
   })
 })
+
+// Brute-force guard on login: counted per IP. Skipped outside production
+// so local dev/e2e never trip it. Registered before the auth router so it
+// runs first for POST /api/auth/login.
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 50,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  skip: () => process.env.NODE_ENV !== 'production',
+  message: { message: 'Too many login attempts, please try again in 15 minutes.' },
+})
+app.use('/api/auth/login', loginLimiter)
 
 app.use('/api/auth', authRoutes)
 

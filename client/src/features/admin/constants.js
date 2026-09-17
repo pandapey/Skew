@@ -37,7 +37,7 @@ export const FISCAL_YEARS = ['January', 'April', 'July', 'October']
 export const ACCESS_LEVELS = ['Full', 'View', 'Deny']
 export const ADMIN_MODULES = [
   'Dashboard', 'Employees', 'HR', 'Attendance', 'Leave',
-  'Projects', 'Finance', 'Announcements', 'Files',
+  'Projects', 'Finance', 'Announcements',
   'Calendar', 'Notifications', 'Reports', 'Admin',
 ]
 export const ROLE_DESCRIPTIONS = {
@@ -55,7 +55,7 @@ export const buildDefaultPermissions = () =>
         ADMIN_MODULES.map((mod) => {
           if (role === 'Admin') return [mod, 'Full']
           if (role === 'Manager') return [mod, ['Dashboard', 'Projects', 'Employees', 'HR', 'Attendance', 'Leave', 'Reports', 'Calendar', 'Finance'].includes(mod) ? 'Full' : 'View']
-          return [mod, ['Dashboard', 'Calendar', 'Files', 'Notifications', 'Announcements', 'Leave', 'Attendance'].includes(mod) ? 'View' : 'Deny']
+          return [mod, ['Dashboard', 'Calendar', 'Notifications', 'Announcements', 'Leave', 'Attendance'].includes(mod) ? 'View' : 'Deny']
         })
       ),
     ])

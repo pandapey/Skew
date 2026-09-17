@@ -14,7 +14,10 @@ export const authService = {
     return apiClient.post('/auth/login', { email, password, device, browser, os })
   },
   me: () => apiClient.get('/auth/me'),
-  logout: async (sessionId) => apiClient.post('/auth/logout', { sessionId }),
+  logout: async (sessionId) => apiClient.post('/auth/logout', { sessionId }, {
+    skipErrorToast: true,
+    skipRetry: true,
+  }),
   uploadAvatar: async (file) => {
     const fd = new FormData()
     fd.append('avatar', file)
@@ -106,44 +109,6 @@ export const announcementApi = {
 
   markRead: async (id) => apiClient.post(`/announcements/${id}/read`),
   unreadCount: async () => apiClient.get('/announcements/unread-count'),
-}
-export const fileService = {
-  list: async (params = {}) => apiClient.get('/files', { params }),
-
-  storage: async () => apiClient.get('/files/storage'),
-
-  createFolder: async ({ name, parent }) => apiClient.post('/files/folders', { name, parent }),
-
-  get: async (id) => apiClient.get(`/files/${id}`),
-
-  upload: async (file, { folder, onProgress } = {}) => {
-    const fd = new FormData()
-    fd.append('file', file)
-    if (folder && folder !== 'root') fd.append('folder', folder)
-    return apiClient.post('/files/upload', fd, {
-      onUploadProgress: (e) => onProgress?.(Math.round((e.loaded / e.total) * 100)),
-    })
-  },
-
-  download: async (id) => apiClient.get(`/files/${id}/download`, { responseType: 'blob' }),
-
-  update: async (id, patch) => apiClient.patch(`/files/${id}`, patch),
-
-  remove: async (id) => apiClient.delete(`/files/${id}`),
-  bulkDelete: async (ids) => apiClient.post('/files/bulk-delete', { ids }),
-  bulkHardDelete: async (ids) => apiClient.post('/files/bulk-hard-delete', { ids }),
-  hardRemove: async (id) => apiClient.delete(`/files/${id}/hard`),
-  restore: async (id) => apiClient.post(`/files/${id}/restore`),
-
-  trash: async (params = {}) => apiClient.get('/files/trash', { params }),
-
-  share: async (id, { user, permission }) => apiClient.post(`/files/${id}/share`, { user, permission }),
-  unshare: async (id, user) => apiClient.delete(`/files/${id}/share`, { data: { user } }),
-  restoreVersion: async (id, versionId) => apiClient.post(`/files/${id}/version/${versionId}/restore`),
-
-  renameFolder: async (id, name) => apiClient.patch(`/files/folders/${id}`, { name }),
-  removeFolder: async (id) => apiClient.delete(`/files/folders/${id}`),
-  restoreFolder: async (id) => apiClient.post(`/files/folders/${id}/restore`),
 }
 
 const hrCollection = (endpoint) => ({

@@ -34,7 +34,7 @@ const TASK_STATUSES = ['Todo', 'In Progress', 'Review', 'Done']
 
 export const PROJECT_FULL_ACCESS = ['Admin', 'Manager']
 
-export const TASK_ASSIGNEE_ROLES = ['Admin', 'Manager', 'Employee']
+export const TASK_ASSIGNEE_ROLES = ['Employee']
 
 export function projectScopeFilter(user) {
   if (!user || PROJECT_FULL_ACCESS.includes(user.role)) return {}
@@ -95,10 +95,10 @@ async function assertCanAssign(project, assignee, user) {
 
   const target = await User.findOne({ name: assignee }).select('role status').lean()
   if (!target || target.status !== 'Active') {
-    throw new ApiError(422, 'Assignee must be an active internal user')
+    throw new ApiError(422, 'Assignee must be an active employee')
   }
   if (!TASK_ASSIGNEE_ROLES.includes(target.role)) {
-    throw new ApiError(403, 'Tasks can only be assigned to internal users')
+    throw new ApiError(403, 'Tasks can only be assigned to employees')
   }
 }
 
@@ -129,6 +129,7 @@ async function enrichComments(rows) {
 }
 
 export async function logActivity(project, actor, action, target, meta) {
+  if (!project) return null
   await ProjectActivity.create({ project, actor, action, target, meta })
 }
 
@@ -421,12 +422,12 @@ export const projectService = {
     if (!file) throw new ApiError(400, 'No file uploaded')
     if (!file.buffer) throw new ApiError(400, 'No file uploaded')
 
-    const project = await Project.findById(task.project).lean()
+    const project = task.project ? await Project.findById(task.project).lean() : null
     const canAttach =
       PROJECT_FULL_ACCESS.includes(user?.role) ||
       user?.name === task.assignee ||
       user?.name === task.assignedBy ||
-      isProjectLead(project, user)
+      (project && isProjectLead(project, user))
     if (!canAttach) throw new ApiError(403, 'You do not have permission to attach files to this task')
 
     const kind = file.mimetype.startsWith('image/')
@@ -440,10 +441,10 @@ export const projectService = {
     const gridFsId = await saveBufferToGridFS(file.buffer, {
       filename: file.originalname,
       contentType: file.mimetype,
-      metadata: { kind: 'task-attachment', project: String(task.project), task: String(task._id) },
+      metadata: { kind: 'task-attachment', project: task.project ? String(task.project) : 'general', task: String(task._id) },
     })
     const record = await ProjectFile.create({
-      project: task.project,
+      project: task.project || null,
       name: file.originalname,
       type: kind,
       size: file.size,
@@ -593,7 +594,7 @@ export const projectService = {
       await task.save()
       await recomputeProgress(task.project)
       await logActivity(task.project, user.name, `submitted "${task.title}" for review`, task.title)
-      const project = await Project.findById(task.project).lean()
+      const project = task.project ? await Project.findById(task.project).lean() : null
       const reviewer = task.assignedBy || project?.lead
       if (reviewer && reviewer !== user.name) {
         await notifyByName([reviewer], {
@@ -601,7 +602,7 @@ export const projectService = {
           title: 'Task Submitted',
           body: `${user.name} completed “${task.title}” and submitted it for your approval.`,
           sender: user.name,
-          link: `/projects/${task.project}`,
+          link: task.project ? `/projects/${task.project}` : '/my-tasks/review',
           priority: 'high',
         })
       }
@@ -636,8 +637,8 @@ export const projectService = {
       if (user && body.assignee) {
         const target = await User.findOne({ name: body.assignee }).select('role status').lean()
         if (target) {
-          if (target.status !== 'Active') throw new ApiError(422, 'Assignee must be an active internal user')
-          if (!TASK_ASSIGNEE_ROLES.includes(target.role)) throw new ApiError(403, 'Tasks can only be assigned to internal users')
+          if (target.status !== 'Active') throw new ApiError(422, 'Assignee must be an active employee')
+          if (!TASK_ASSIGNEE_ROLES.includes(target.role)) throw new ApiError(403, 'Tasks can only be assigned to employees')
         }
       }
     }
@@ -701,15 +702,15 @@ export const projectService = {
         const project = await Project.findById(targetProjectId).lean()
         if (!project) throw new ApiError(404, 'Project not found')
         const nextAssignee = normalizedPatch.assignee !== undefined ? normalizedPatch.assignee : existing.assignee
-        await assertCanAssign(project, nextAssignee, user)
+        if (nextAssignee !== existing.assignee) await assertCanAssign(project, nextAssignee, user)
       } else {
         // General Task: validate assignee without project
         const nextAssignee = normalizedPatch.assignee !== undefined ? normalizedPatch.assignee : existing.assignee
-        if (nextAssignee) {
+        if (nextAssignee && nextAssignee !== existing.assignee) {
           const target = await User.findOne({ name: nextAssignee }).select('role status').lean()
           if (target) {
-            if (target.status !== 'Active') throw new ApiError(422, 'Assignee must be an active internal user')
-            if (!TASK_ASSIGNEE_ROLES.includes(target.role)) throw new ApiError(403, 'Tasks can only be assigned to internal users')
+            if (target.status !== 'Active') throw new ApiError(422, 'Assignee must be an active employee')
+            if (!TASK_ASSIGNEE_ROLES.includes(target.role)) throw new ApiError(403, 'Tasks can only be assigned to employees')
           }
         }
       }
@@ -764,12 +765,12 @@ export const projectService = {
       throw new ApiError(409, 'This task has already been approved')
     }
 
-    const project = await Project.findById(task.project).lean()
+    const project = task.project ? await Project.findById(task.project).lean() : null
 
     let attachmentRef = { fileId: null, name: null, url: null }
     if (attachment?.name && attachment?.url) {
       const file = await ProjectFile.create({
-        project: task.project,
+        project: task.project || null,
         name: attachment.name,
         type: attachment.type || 'file',
         size: attachment.size || 0,
@@ -802,7 +803,7 @@ export const projectService = {
         title: 'Task Submitted',
         body: `${user.name} submitted “${task.title}” for your review. Comment: ${text}`,
         sender: user.name,
-        link: `/projects/${task.project}`,
+        link: task.project ? `/projects/${task.project}` : '/my-tasks/review',
         priority: 'high',
       })
     }
@@ -821,14 +822,14 @@ export const projectService = {
       throw new ApiError(409, 'Only a submitted task can be reviewed')
     }
 
-    const project = await Project.findById(task.project).lean()
-    if (!project) throw new ApiError(404, 'Project not found')
+    const project = task.project ? await Project.findById(task.project).lean() : null
+    if (task.project && !project) throw new ApiError(404, 'Project not found')
 
     const allowed =
       PROJECT_FULL_ACCESS.includes(user?.role) ||
       user?.name === task.assignedBy ||
       user?.name === task.assignee ||
-      isProjectLead(project, user)
+      (project && isProjectLead(project, user))
     if (!allowed) throw new ApiError(403, 'Only the project lead who assigned this task can review it')
     if (
       user?.name === task.submission?.by &&
@@ -867,7 +868,7 @@ export const projectService = {
         title: `Task ${status}`,
         body: `${user.name} ${status.toLowerCase()} your submission for “${task.title}”. Comment: ${text}`,
         sender: user.name,
-        link: `/projects/${task.project}`,
+        link: task.project ? `/projects/${task.project}` : '/my-tasks/history',
         priority: status === 'Rejected' ? 'high' : 'normal',
       })
     }
@@ -875,7 +876,7 @@ export const projectService = {
   },
 
   async reviewQueue(user) {
-    const or = [{ assignedBy: user?.name }]
+    const or = [{ assignedBy: user?.name }, { assignee: user?.name, project: null }]
     const ledProjects = await Project.find({ lead: user?.name }).select('_id').lean()
     if (ledProjects.length) or.push({ project: { $in: ledProjects.map((p) => p._id) } })
     if (PROJECT_FULL_ACCESS.includes(user?.role)) {
@@ -1071,7 +1072,7 @@ export const projectService = {
             title: 'New task comment',
             body: `${comment.author} commented on “${task.title}”: ${(comment.body || '').slice(0, 80)}`,
             sender: comment.author,
-            link: `/projects/${task.project}`,
+            link: task.project ? `/projects/${task.project}` : '/my-tasks/history',
           }).catch(() => {})
         }
       }

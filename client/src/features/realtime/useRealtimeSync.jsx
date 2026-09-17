@@ -27,7 +27,6 @@ const RESOURCE_QUERY_KEYS = {
   ],
 
   finance: [['finance'], ['finance-stats'], ['finance-categories'], ['fin-invoices'], ['fin-payments'], ['fin-transactions'], ['fin-cat-all'], ['fin-budgets'], ['fin-income'], ['fin-expenses'], ['finance-tax'], ['finance-period'], ['finance-period-month'], ['finance-period-year']],
-  files: [['files'], ['storage']],
   notifications: [['notifications'], ['notification-count']],
 
   calendar: [['calendar'], ['calendar-events'], ['today-meetings'], ['calendar-meetings']],
@@ -94,7 +93,6 @@ export function RealtimeProvider({ children }) {
       bust(['client-activity'])
     }
     const onClientNotification = () => bust(['client-notifications'])
-
 
     const onChatNewMessage = ({ conversationId }) => {
       bust(['chat-conversations'])

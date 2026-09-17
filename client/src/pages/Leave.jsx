@@ -42,7 +42,10 @@ export default function Leave() {
   const canApprove = hasRole(LEAVE_APPROVE_ROLES)
   const isAdmin = hasRole(ROLES.ADMIN)
   const [vs, patchVs, , setVs] = useViewState('leave-view', { tab: isAdmin ? 'approvals' : 'mine', search: '', status: '', page: 1, limit: 8 })
-  const tab = canApprove ? vs.tab : 'mine'
+  // Admins have no "My Requests" view — always show the approval queue.
+  // (The stored tab is per-browser-session, so without this an admin could
+  // inherit 'mine' from a reload or another role and see an empty list.)
+  const tab = isAdmin ? 'approvals' : (canApprove ? vs.tab : 'mine')
   const setTab = (v) => patchVs({ tab: v, page: 1 })
   const params = { search: vs.search, status: vs.status, page: vs.page, limit: vs.limit }
   const setParams = (next) => setVs((s) => ({ ...s, ...(typeof next === 'function' ? next({ search: s.search, status: s.status, page: s.page, limit: s.limit }) : next) }))
@@ -154,9 +157,9 @@ export default function Leave() {
       action === 'approve' ? leaveApi.approve(id, comment) : leaveApi.reject(id, comment)
     ),
     onSuccess: (_r, v) => {
-      // Notification-style feedback (email-ready on backend).
+
       toast.success(v.action === 'approve' ? 'Leave approved — employee notified' : 'Leave rejected — employee notified')
-      // Real notification for the affected employee.
+
       notify({
         type: 'leave',
         title: v.action === 'approve' ? 'Leave approved' : 'Leave rejected',
@@ -169,8 +172,6 @@ export default function Leave() {
       })
       setDetail(null); setDecision(null); invalidate()
     },
-    // Surface the server's actual message (e.g. an expired request, or an
-    // insufficient balance) instead of a generic string that hides the reason.
     onError: (err) => toast.error(
       err?.response?.data?.message || err?.message || 'Action failed'
     ),
@@ -370,7 +371,7 @@ export default function Leave() {
           </Card>
         </div>
 
-        {/* Holidays */}
+        {}
         <Card>
           <CardHeader title="Holiday Calendar" action={<FiGift className="text-muted" />} />
           <div className="space-y-2">

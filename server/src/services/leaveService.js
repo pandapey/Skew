@@ -1,6 +1,7 @@
 import { LeaveRequest, LeaveBalance, LeaveType } from '../models/leaveModels.js'
 import { Holiday, Attendance } from '../models/attendanceModels.js'
 import { Employee } from '../models/Employee.js'
+import { User } from '../models/User.js'
 import { ApiError } from '../utils/asyncHandler.js'
 import {
   resolveLeaveDuration, countSundays, parseDate, SUNDAY, MAX_LEAVE_DAYS_PER_REQUEST,
@@ -17,7 +18,14 @@ const daysBetween = (from, to) => resolveLeaveDuration({ from, to }).days
 const withId = (doc) => (doc ? { ...doc, id: String(doc._id) } : doc)
 const withIds = (docs) => docs.map(withId)
 
-function notify(to, subject, body) {
+// In-app fan-out to everyone who can approve (Admin/Manager), excluding
+// the applicant. This replaces the old no-op email stub below it.
+async function notifyApprovers(payload, excludeName) {
+  const approvers = await User.find({ role: { $in: ['Admin', 'Manager'] }, status: 'Active' })
+    .select('name -_id')
+    .lean()
+  const names = approvers.map((a) => a.name).filter((n) => n && n !== excludeName)
+  if (names.length) await notifyUsersByName(names, payload)
 }
 
 async function syncAttendanceForApprovedLeave(req) {
@@ -257,13 +265,17 @@ export const leaveService = {
 
     await assertDatesAreRequestable(user, body.from, body.to)
 
-    const balance = await LeaveBalance.findOne({ employee: user.name, type: body.type })
-    if (balance && balance.balance < days) {
-      throw new ApiError(422, `Insufficient balance: ${balance.balance} day(s) available, ${days} requested`)
-    }
-
     const type = await LeaveType.findOne({ name: body.type })
     if (!type) throw new ApiError(422, `Unknown leave type: ${body.type}`)
+
+    // Enforce allocation for paid leave (override-aware via availableBalanceFor).
+    // Unpaid types are intentionally unlimited — payroll prices them separately.
+    if (type.paid !== false) {
+      const available = await availableBalanceFor(user, body.type)
+      if (days > available) {
+        throw new ApiError(422, `Insufficient balance: ${available} day(s) available, ${days} requested`)
+      }
+    }
 
     if (!canSeeLeaveType(type, user)) {
       throw new ApiError(
@@ -295,7 +307,14 @@ export const leaveService = {
       expiresAt,
       workflow: [{ stage: 'Applied', by: user.name, note: appliedNote }],
     })
-    notify('hr@skew.com', 'New leave request', `${user.name} applied for ${days} day(s) of ${body.type}`)
+    notifyApprovers({
+      type: 'leave',
+      title: 'New leave request',
+      body: `${user.name} applied for ${days} day(s) of ${body.type} (${body.from === body.to ? body.from : `${body.from} to ${body.to}`}).`,
+      sender: user.name,
+      link: `/leave?request=${req._id}`,
+      priority: 'high',
+    }, user.name).catch(() => {})
     return withId(req.toObject())
   },
 
@@ -376,7 +395,14 @@ export const leaveService = {
       }],
     })
 
-    notify('hr@skew.com', 'New hourly permission request', `${user.name} requested ${hours}h of permission on ${date}`)
+    notifyApprovers({
+      type: 'leave',
+      title: 'New hourly permission request',
+      body: `${user.name} requested ${hours}h of permission on ${date}.`,
+      sender: user.name,
+      link: `/leave?request=${req._id}`,
+      priority: 'high',
+    }, user.name).catch(() => {})
     return withId(req.toObject())
   },
 
@@ -397,9 +423,14 @@ export const leaveService = {
     const status = action === 'approve' ? 'Approved' : 'Rejected'
 
     if (status === 'Approved' && req.requestKind !== 'Hourly Permission') {
+      // Re-check allocation at decision time (balances may have moved since apply).
+      const reqType = await LeaveType.findOne({ name: req.type }).lean()
+      if (reqType && reqType.paid !== false) {
+        const available = await availableBalanceFor({ name: req.employee }, req.type)
+        if (available < req.days) throw new ApiError(422, 'Insufficient balance to approve')
+      }
       const balance = await LeaveBalance.findOne({ employee: req.employee, type: req.type })
       if (balance) {
-        if (balance.balance < req.days) throw new ApiError(422, 'Insufficient balance to approve')
         balance.used += req.days
         balance.balance -= req.days
         await balance.save()
@@ -418,8 +449,6 @@ export const leaveService = {
         console.error('syncAttendanceForApprovedLeave failed:', err?.message)
       })
     }
-
-    notify(req.employee, `Leave ${status}`, `Your ${req.type} request was ${status.toLowerCase()} by ${approver}`)
 
     const isHourly = req.requestKind === 'Hourly Permission'
     const label = isHourly
@@ -459,6 +488,46 @@ export const leaveService = {
   async remove(id) {
     const doc = await LeaveRequest.findByIdAndDelete(id)
     if (!doc) throw new ApiError(404, 'Leave request not found')
+    // Undo approval side-effects so balances/attendance stay consistent.
+    if (doc.status === 'Approved' && doc.requestKind !== 'Hourly Permission' && (doc.days || 0) > 0) {
+      const balance = await LeaveBalance.findOne({ employee: doc.employee, type: doc.type })
+      if (balance) {
+        balance.used = Math.max(0, (balance.used || 0) - doc.days)
+        balance.balance = (balance.balance || 0) + doc.days
+        await balance.save().catch(() => {})
+      }
+      // Remove the auto-created On Leave attendance rows (only untouched ones).
+      const dates = []
+      if (doc.halfDay) {
+        dates.push(doc.from)
+      } else {
+        const a = parseDate(doc.from)
+        const b = parseDate(doc.to)
+        if (a && b) {
+          a.setHours(0, 0, 0, 0)
+          b.setHours(0, 0, 0, 0)
+          const cursor = new Date(a)
+          while (cursor <= b) {
+            if (cursor.getDay() !== SUNDAY) {
+              const y = cursor.getFullYear()
+              const m = String(cursor.getMonth() + 1).padStart(2, '0')
+              const d = String(cursor.getDate()).padStart(2, '0')
+              dates.push(`${y}-${m}-${d}`)
+            }
+            cursor.setDate(cursor.getDate() + 1)
+          }
+        }
+      }
+      if (dates.length) {
+        await Attendance.deleteMany({
+          employee: doc.employee,
+          date: { $in: dates },
+          status: 'On Leave',
+          checkIn: null,
+          checkOut: null,
+        }).catch(() => {})
+      }
+    }
     return { id }
   },
 

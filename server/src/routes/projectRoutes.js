@@ -271,10 +271,12 @@ router.get('/:id/documents/:docId/download', asyncHandler(async (req, res) => {
 router.get('/files/:fileId/download', asyncHandler(async (req, res) => {
   const pf = await ProjectFile.findById(req.params.fileId).lean()
   if (!pf) throw new ApiError(404, 'File not found')
-  // access check: must have project access
-  const { resolveProjectRef, hasProjectAccess } = await import('../services/projectService.js')
-  const project = await resolveProjectRef(String(pf.project))
-  if (!project || !(await hasProjectAccess(project, req.user))) throw new ApiError(403, 'No access to this project')
+  // access check: must have project access (General Task files have project=null)
+  if (pf.project) {
+    const { resolveProjectRef, hasProjectAccess } = await import('../services/projectService.js')
+    const project = await resolveProjectRef(String(pf.project))
+    if (!project || !(await hasProjectAccess(project, req.user))) throw new ApiError(403, 'No access to this project')
+  }
   const { streamGridFSFile, isGridFsId } = await import('../utils/mongoStorage.js')
   if (pf.fileId && isGridFsId(pf.fileId)) {
     return streamGridFSFile(pf.fileId, res, {

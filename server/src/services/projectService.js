@@ -90,6 +90,27 @@ export function isProjectLead(project, user) {
   return Boolean(user?.name) && project?.lead === user.name
 }
 
+// Pure permission rule for task reviews (also unit-tested). General Tasks
+// (project == null) can be reviewed by Admin/Manager, the assigner, or the
+// assignee — which is what allows approving your own General Task.
+export function canReviewTask(task, project, user) {
+  const privileged = PROJECT_FULL_ACCESS.includes(user?.role)
+  const allowed =
+    privileged ||
+    user?.name === task.assignedBy ||
+    user?.name === task.assignee ||
+    (project && isProjectLead(project, user))
+  if (!allowed) return { allowed: false, reason: 'Only the project lead who assigned this task can review it' }
+  if (
+    user?.name === task.submission?.by &&
+    !privileged &&
+    user?.name !== task.assignee
+  ) {
+    return { allowed: false, reason: 'You cannot review your own submission' }
+  }
+  return { allowed: true }
+}
+
 async function assertCanAssign(project, assignee, user) {
   if (!assignee) throw new ApiError(422, 'An assignee is required')
 
@@ -100,9 +121,6 @@ async function assertCanAssign(project, assignee, user) {
   if (!TASK_ASSIGNEE_ROLES.includes(target.role)) {
     throw new ApiError(403, 'Tasks can only be assigned to employees')
   }
-}
-
-function notify(to, subject, body) {
 }
 
 export async function notifyClientForProject(sourceProjectId, { title, body, icon = 'update' } = {}) {
@@ -405,7 +423,6 @@ export const projectService = {
     await task.save()
     await recomputeProgress(task.project)
     await logActivity(task.project, actor, `moved "${task.title}" from ${from} to ${status}`, task.title)
-    if (status === 'Done') notify('team@skew.com', 'Task completed', `${actor} completed "${task.title}"`)
     return withId(task.toObject())
   },
 
@@ -660,7 +677,6 @@ export const projectService = {
       await recomputeProgress(task.project)
       await logActivity(task.project, actor, `created ${task.type.toLowerCase()} "${task.title}"`, task.title)
     }
-    notify('team@skew.com', `New ${task.type}`, `${actor} created "${task.title}"`)
 
     if (task.assignee && task.assignee !== actor) {
       const bodyText = project ? `${actor} assigned you “${task.title}” in ${project.name}${task.dueDate ? ` (due ${task.dueDate})` : ''}.` : `${actor} assigned you “${task.title}”${task.dueDate ? ` (due ${task.dueDate})` : ''}.`
@@ -825,19 +841,8 @@ export const projectService = {
     const project = task.project ? await Project.findById(task.project).lean() : null
     if (task.project && !project) throw new ApiError(404, 'Project not found')
 
-    const allowed =
-      PROJECT_FULL_ACCESS.includes(user?.role) ||
-      user?.name === task.assignedBy ||
-      user?.name === task.assignee ||
-      (project && isProjectLead(project, user))
-    if (!allowed) throw new ApiError(403, 'Only the project lead who assigned this task can review it')
-    if (
-      user?.name === task.submission?.by &&
-      !PROJECT_FULL_ACCESS.includes(user?.role) &&
-      user?.name !== task.assignee
-    ) {
-      throw new ApiError(403, 'You cannot review your own submission')
-    }
+    const allowed = canReviewTask(task, project, user)
+    if (!allowed.allowed) throw new ApiError(403, allowed.reason)
 
     const entry = { reviewer: user.name, status, comment: text, at: new Date() }
     task.review = entry

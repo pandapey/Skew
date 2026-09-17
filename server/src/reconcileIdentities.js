@@ -1,15 +1,3 @@
-// One-time helper: link existing (seeded) Users and Employees into a single
-// identity, mirroring the live behaviour added in identityLink.js.
-//
-// For every staff User it ensures a linked Employee exists (creating one if
-// needed); for every Employee without a linked login it creates a User account
-// with a generated temp password. Run once after deploying the identity-link
-// change to make historical data consistent:
-//
-//   npm run reconcile          # from repo root
-//
-// NOTE: this will create login accounts for any Employee that doesn't already
-// have one (with auto-generated temp passwords printed to the console).
 import mongoose from 'mongoose'
 import dotenv from 'dotenv'
 dotenv.config()
@@ -18,7 +6,11 @@ import { User } from './models/User.js'
 import { Employee } from './models/Employee.js'
 import { STAFF_ROLES, linkUserToEmployee, linkEmployeeToUser } from './services/identityLink.js'
 
-const uri = process.env.MONGODB_URI || 'mongodb+srv://teammate282024_db_user:tB6s8YoI4vraB045@cluster0.rrxovbt.mongodb.net/Skew?appName=Cluster0'
+const uri = process.env.MONGODB_URI || process.env.MONGO_URI
+if (!uri) {
+  console.error('Set MONGODB_URI (or MONGO_URI) before running the reconciler.')
+  process.exit(1)
+}
 
 async function main() {
   await mongoose.connect(uri, { serverSelectionTimeoutMS: 5000 })

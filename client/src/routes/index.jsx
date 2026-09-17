@@ -64,7 +64,6 @@ const FinanceMonthly = lazy(() => import('@/pages/finance/MonthlyReports'))
 const FinanceYearly = lazy(() => import('@/pages/finance/YearlyReports'))
 const FinanceCharts = lazy(() => import('@/pages/finance/Charts'))
 const Announcements = lazy(() => import('@/pages/Announcements'))
-const Files = lazy(() => import('@/pages/Files'))
 const Calendar = lazy(() => import('@/pages/Calendar'))
 const Notifications = lazy(() => import('@/pages/Notifications'))
 const Reports = lazy(() => import('@/pages/Reports'))
@@ -218,7 +217,6 @@ export const router = createBrowserRouter([
       route('/finance/charts', FinanceCharts, [ROLES.ADMIN, ROLES.MANAGER]),
       { path: '/expense', element: <Navigate to="/finance" replace /> },
       route('/announcements', Announcements),
-      route('/files', Files),
       route('/calendar', Calendar),
       route('/notifications', Notifications),
       route('/chat', Chat),

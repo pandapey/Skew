@@ -56,4 +56,22 @@ describe('canReviewTask — who may approve a submitted task', () => {
     const task = { assignedBy: 'Aarav', assignee: 'Divya', submission: { by: 'Aarav' } }
     assert.equal(canReviewTask(task, project, admin).allowed, true)
   })
+
+  it('matches reviewers by ID after a rename', async () => {
+    const { default: mongoose } = await import('mongoose')
+    const id = new mongoose.Types.ObjectId()
+    const renamedAssignee = { name: 'Divya-Renamed', _id: id, role: 'Employee' }
+    const task = {
+      assignedBy: 'Rahul',
+      assignedById: null,
+      assignee: 'Divya',
+      assigneeId: id,
+      submission: { by: 'Divya', byId: id },
+    }
+    // Own General Task still self-approvable via ID.
+    assert.equal(canReviewTask(task, null, renamedAssignee).allowed, true)
+    // And the ID counts as "assigned to you" for lifecycle gates.
+    const { isIdentityHolder } = await import('../src/services/identityLink.js')
+    assert.equal(isIdentityHolder(task.assignee, task.assigneeId, renamedAssignee), true)
+  })
 })

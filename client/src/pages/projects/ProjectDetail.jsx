@@ -61,17 +61,8 @@ export default function ProjectDetail() {
 
   const { data: project, isLoading, isError, error, refetch } = useQuery({ queryKey: ['project-detail', id], queryFn: () => projectApi.detail(id) })
 
-  // Hook ORDER is sacred: every hook must run on every render. This assignee
-  // pool was previously fetched AFTER the loading/error early-returns, so the
-  // loading render called one fewer hook than the loaded render — React throws
-  // "Rendered more hooks than during the previous render" on a cold-cache load
-  // (which the error-boundary retry then papered over, looking like a 500 that
-  // a refresh "fixed"). Moved above the returns so it always runs.
   const { data: assignees = [] } = useQuery({ queryKey: ['project-assignees'], queryFn: () => projectApi.assignees() })
 
-  // The URL carries the human-readable Project ID (PRJ001); the tasks / sprints
-  // / files / comments endpoints all key on the Mongo ObjectId, so everything
-  // below the loaded project uses its resolved `id`.
   const projectId = project?.id || project?._id
 
   const invalidate = () => {
@@ -102,9 +93,6 @@ export default function ProjectDetail() {
     onError: () => toast.error('Could not delete project'),
   })
 
-  // PHASE: EMPLOYEE TASK READ STATE — opening a task's details from the board
-  // or backlog marks it read (assignee-only, same rule as My Tasks) so the
-  // unread badge decrements no matter where the assignee views the task.
   const markViewedMut = useMutation({
     mutationFn: (taskId) => projectApi.markTaskViewed(taskId),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['tasks', 'mine-count'], refetchType: 'active' }) },
@@ -167,16 +155,10 @@ export default function ProjectDetail() {
         }
       />
 
-      {/* PHASE: EMPLOYEE PROJECT PAGE (REQUIREMENTS 3-5) — the employee variant
-          of this KPI row is REMOVED ENTIRELY (Tasks Done / My Tasks / Task
-          Progress / Progress cards no longer render for employees; the overview
-          tab's ProgressBar still shows the project's overall progress).
-          Admin/Manager/HR keep the original org-wide widgets untouched. */}
       {!isEmployee && (
         <div className="mb-4 grid grid-cols-2 gap-4 lg:grid-cols-4">
           <StatCard label="Tasks Done" value={`${doneTasks}/${tasks.length}`} icon={FiCheckCircle} tone="success" />
           <StatCard label="Open Bugs" value={bugs.filter((b) => b.status !== 'Done').length} icon={FiAlertCircle} tone="danger" />
-          <StatCard label="Milestones" value={`${milestones.filter((m) => m.status === 'Reached').length}/${milestones.length}`} icon={FiFlag} tone="accent" />
           <StatCard label="Progress" value={`${project.progress || 0}%`} icon={FiTrendingUp} tone="primary" />
         </div>
       )}
@@ -192,15 +174,6 @@ export default function ProjectDetail() {
               <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
                 {[
                   { l: 'Lead', v: project.lead || '—', i: FiUser },
-                  { l: 'Start', v: formatDate(project.startDate, 'DD MMM YYYY'), i: FiCalendar },
-                  { l: 'Deadline', v: formatDate(project.deadline, 'DD MMM YYYY'), i: FiCalendar },
-                  ...(isEmployee ? [] : [{ l: 'Budget', v: formatCurrency(project.budget), i: FiDollarSign }]),
-                  ...(isEmployee ? [] : [
-                    { l: 'Advance Payment', v: formatCurrency(project.advancePayment), i: FiCheckCircle },
-                    { l: 'Monthly Due', v: formatCurrency(project.monthlyDue), i: FiCreditCard },
-                    { l: 'Billing Cycle', v: project.billingCycle || '—', i: FiRepeat },
-                    { l: 'Payment Method', v: project.paymentMode || '—', i: FiCreditCard },
-                  ]),
                   { l: 'Website', v: project.website || '—', i: FiGlobe },
                   { l: 'Plan', v: project.plan || '—', i: FiAward },
                 ].map((x) => (
@@ -310,12 +283,12 @@ export default function ProjectDetail() {
         editing={editingTask}
         saving={saveTaskMut.isPending}
         assignees={assignees}
-        sprints={sprints}
+        defaultProjectId={projectId}
         projectName={project.name}
       />
       )}
 
-      {/* Task detail */}
+      {}
       {taskDetail && (
         <TaskDetailModal task={taskDetail} projectId={projectId} canWrite={canManageTasks} onClose={() => setTaskDetail(null)} onEdit={() => openEditTask(taskDetail)} />
       )}
@@ -336,7 +309,6 @@ export default function ProjectDetail() {
     </div>
   )
 }
-
 
 function TaskDetailModal({ task, projectId, canWrite, onClose, onEdit }) {
   const formatDateTime = (value) => {

@@ -87,10 +87,12 @@ export default function Board() {
         editing={editing}
         saving={saveMut.isPending}
         assignees={assignees}
+        projects={projects}
+        defaultProjectId={projectId}
         projectName={activeProject?.name}
       />
 
-      {/* Task detail */}
+      {}
       <Modal open={!!detail} onClose={() => setDetail(null)} title="Task Details" size="lg"
         footer={<>{detail && <Button variant="ghost" onClick={() => openEdit(detail)}>Edit</Button>}<Button onClick={() => setDetail(null)}>Close</Button></>}>
         {detail && (

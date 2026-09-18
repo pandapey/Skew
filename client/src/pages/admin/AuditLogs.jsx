@@ -15,7 +15,6 @@ const MODULES = [
   'Finance', 'HR', 'Permissions', 'Project', 'Roles', 'Security', 'Theme', 'User',
 ]
 
-// Real backend returns `at` / `createdAt`; mock returns `time`.
 const fmtTime = (r) => {
   const raw = r.time || r.at || r.createdAt
   if (!raw) return '—'
@@ -58,7 +57,6 @@ export default function AuditLogs() {
     onError: () => toast.error('Delete failed'),
   })
 
-  // Any change to search / filters / sort restarts at page 1.
   const setP = (patch) => { setParams((p) => ({ ...p, ...patch })); setPage(1) }
 
   const exportCols = [
@@ -72,7 +70,7 @@ export default function AuditLogs() {
       <PageHeader
         title="Audit Logs"
         subtitle="A chronological record of administrative actions."
-        actions={<ExportMenu rows={rows} columns={exportCols} filename="audit-logs" title="Audit Logs" subtitle="Skew Enterprise Hub" />}
+        actions={<ExportMenu rows={rows} columns={exportCols} filename="audit-logs" title="Audit Logs" subtitle="Skew Infotech Pvt. Ltd." />}
       />
 
       <Card>

@@ -67,7 +67,7 @@ app.use(
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'ok',
-    service: 'Skew Enterprise Hub API',
+    service: 'Skew Infotech Pvt. Ltd. API',
   })
 })
 

@@ -1,4 +1,4 @@
-# Skew Enterprise Hub
+# Skew Infotech Pvt. Ltd.
 
 Enterprise Office Management System for **Skew Infotech Pvt. Ltd.** — a premium, SaaS-style dashboard unifying HR, CRM, Projects, Inventory, Finance, Attendance, Leave, Files, Announcements, Reports and Administration.
 
@@ -42,7 +42,7 @@ MongoDB collections (63) — users, employees, projects, clients, finance, crm, 
 ## 📋 Prerequisites
 
 - **Node.js** 18+ (verified on Node 24)
-- **MongoDB** 5.0+ — local Community Server or MongoDB Atlas. Local dev uses `mongodb+srv://teammate282024_db_user:tB6s8YoI4vraB045@cluster0.rrxovbt.mongodb.net/Skew?appName=Cluster0`.
+- **MongoDB** 5.0+ — local Community Server or MongoDB Atlas. Local dev uses `mongodb+srv://teammate282024_db_user:LJczRHTLAxg5itd2@cluster0.aqys1ru.mongodb.net/Skew?appName=Cluster0`.
 
 ---
 
@@ -54,7 +54,7 @@ Copy `server/.env.example` to `server/.env`:
 
 ```
 PORT=5000
-MONGO_URI=mongodb+srv://teammate282024_db_user:tB6s8YoI4vraB045@cluster0.rrxovbt.mongodb.net/Skew?appName=Cluster0
+MONGO_URI=mongodb+srv://teammate282024_db_user:LJczRHTLAxg5itd2@cluster0.aqys1ru.mongodb.net/Skew?appName=Cluster0
 JWT_SECRET=change_this_to_a_long_random_secret
 JWT_REFRESH_SECRET=change_this_to_another_long_random_secret
 JWT_EXPIRES_IN=1d
@@ -137,13 +137,13 @@ Real-time (Socket.IO) enabled
 ```bash
 npm run seed             # clears each collection and repopulates (idempotent)
 # or drop the whole database, then re-seed:
-mongosh "mongodb+srv://teammate282024_db_user:tB6s8YoI4vraB045@cluster0.rrxovbt.mongodb.net/Skew?appName=Cluster0" --eval "db.dropDatabase()"
+mongosh "mongodb+srv://teammate282024_db_user:LJczRHTLAxg5itd2@cluster0.aqys1ru.mongodb.net/Skew?appName=Cluster0" --eval "db.dropDatabase()"
 ```
 
 ### Connect to MongoDB
 
-- **Compass:** `mongodb+srv://teammate282024_db_user:tB6s8YoI4vraB045@cluster0.rrxovbt.mongodb.net/Skew?appName=Cluster0`
-- **Shell:** `mongosh "mongodb+srv://teammate282024_db_user:tB6s8YoI4vraB045@cluster0.rrxovbt.mongodb.net/Skew?appName=Cluster0"`
+- **Compass:** `mongodb+srv://teammate282024_db_user:LJczRHTLAxg5itd2@cluster0.aqys1ru.mongodb.net/Skew?appName=Cluster0`
+- **Shell:** `mongosh "mongodb+srv://teammate282024_db_user:LJczRHTLAxg5itd2@cluster0.aqys1ru.mongodb.net/Skew?appName=Cluster0"`
 
 ---
 
@@ -171,7 +171,7 @@ These are **real login accounts stored in the `users` collection**, created by `
 ## 🗂 Project Structure
 
 ```
-skew-enterprise-hub/
+skew-infotech-pvt-ltd/
 ├── package.json        # root orchestrator (concurrently) — dev/build/seed scripts
 ├── client/             # React 19 + Vite frontend
 │   ├── index.html
@@ -188,7 +188,7 @@ skew-enterprise-hub/
 │       ├── hooks/      # useAuth, useDebounce, usePagination, useTheme
 │       ├── layouts/    # AuthLayout, DashboardLayout, Sidebar, Navbar
 │       ├── pages/      # route-level page wrappers (thin) that compose features/
-│       ├── redux/      # store, auth/ui slices (redux-persist)
+│       ├── redux/      # store, auth/ui slices (redux-persist) cd s
 │       ├── routes/     # router + ProtectedRoute
 │       ├── styles/     # tailwind + theme tokens
 │       └── utils/      # formatters, csv export

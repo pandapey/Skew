@@ -276,7 +276,6 @@ export default function Users() {
   const onEdit = useCallback((r) => openEdit(r), [])
   const onDelete = useCallback((r) => setDeleting(r), [])
 
-  // Build the visible columns (+ always-on actions column).
   const columns = useMemo(() => {
     const visible = MASTER_COLUMNS.filter((c) => !hidden.has(c.key))
     const actions = canWrite
@@ -293,7 +292,7 @@ export default function Users() {
         }]
       : []
     return [...visible, ...actions]
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+
   }, [hidden, canWrite, onView, onReset, onEdit, onDelete])
 
   const selectedRowsArray = useMemo(() => Array.from(selectedRows.values()), [selectedRows])
@@ -321,7 +320,7 @@ export default function Users() {
                 </DropdownItem>
               ))}
             </Dropdown>
-            <ExportMenu rows={rows} columns={exportColumns} filename="users" title="Users" subtitle="Skew Enterprise Hub" />
+            <ExportMenu rows={rows} columns={exportColumns} filename="users" title="Users" subtitle="Skew Infotech Pvt. Ltd." />
             {canWrite && (
               <Dropdown
                 align="right"
@@ -338,7 +337,7 @@ export default function Users() {
       />
 
       <Card>
-        {/* Bulk action bar */}
+        {}
         {canWrite && selectedCount > 0 && (
           <div className="mb-4 flex flex-col gap-3 rounded-card border border-primary/30 bg-primary/[0.05] p-3 sm:flex-row sm:items-center">
             <span className="text-sm font-medium text-primary">{selectedCount} selected</span>
@@ -347,7 +346,7 @@ export default function Users() {
               <Button size="sm" variant="ghost" icon={FiUserX} onClick={() => bulkStatusMutation.mutate({ ids: Array.from(selected), status: 'Inactive' })}>Deactivate</Button>
               <Button size="sm" variant="ghost" icon={FiLock} onClick={() => bulkStatusMutation.mutate({ ids: Array.from(selected), status: 'Suspended' })}>Suspend</Button>
               {selectedRowsArray.length > 0 && (
-                <ExportMenu rows={selectedRowsArray} columns={exportColumns} filename="users-selected" title="Selected Users" subtitle="Skew Enterprise Hub" />
+                <ExportMenu rows={selectedRowsArray} columns={exportColumns} filename="users-selected" title="Selected Users" subtitle="Skew Infotech Pvt. Ltd." />
               )}
               <Button size="sm" variant="danger" icon={FiTrash2} onClick={() => setBulkDeleting(true)}>Delete</Button>
               <Button size="sm" variant="ghost" onClick={clearSelection}>Clear</Button>
@@ -422,7 +421,7 @@ export default function Users() {
         ) : null}
       </Modal>
 
-      {/* Reset password modal */}
+      {}
       <Modal
         open={modal === 'reset'}
         onClose={closeReset}

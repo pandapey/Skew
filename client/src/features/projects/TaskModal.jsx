@@ -4,27 +4,37 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { FiPaperclip, FiX } from 'react-icons/fi'
 import { Modal, Input, Select, Textarea, Button } from '@/components/ui'
 import { taskSchema } from './schemas'
-import { TASK_STATUSES, TASK_TYPES, PRIORITIES, SEVERITIES, STORY_POINTS } from './constants'
+import { TASK_STATUSES, TASK_TYPES, PRIORITIES, SEVERITIES } from './constants'
 
 const DEFAULTS = {
   title: '', description: '', type: 'Task', status: 'Todo', priority: 'Medium',
-  severity: 'Major', assignee: '', storyPoints: 3, dueDate: '', project: '',
+  severity: 'Major', assignee: '', project: '',
 }
 
 export function TaskModal({
-  open, onClose, onSubmit, editing, saving, assignees = [], sprints,
-  employeeMode = false, projects = [],
+  open, onClose, onSubmit, editing, saving, assignees = [],
+  employeeMode = false, projects = [], defaultProjectId = '', projectName = '',
 }) {
   const form = useForm({ resolver: zodResolver(taskSchema), defaultValues: DEFAULTS })
   const [pendingFiles, setPendingFiles] = useState([])
   const fileInputRef = useRef(null)
 
+  // When opened from a specific project (Board / ProjectDetail), lock the
+  // task to that project so the form shows the current project instead of
+  // falling back to "General Task".
+  const lockedProjectId = defaultProjectId ? String(defaultProjectId) : ''
+  const lockedProjectName = projectName
+    || (projects.find((p) => String(p.id) === lockedProjectId)?.name)
+    || ''
+
   useEffect(() => {
     if (open) {
-      const initial = editing ? { ...DEFAULTS, ...editing, project: editing.project || '' } : DEFAULTS
+      const initial = editing
+        ? { ...DEFAULTS, ...editing, project: editing.project || lockedProjectId || '' }
+        : { ...DEFAULTS, project: lockedProjectId || DEFAULTS.project }
       form.reset(initial); setPendingFiles([])
     }
-  }, [open, editing])
+  }, [open, editing, lockedProjectId])
 
   const isBug = form.watch('type') === 'Bug'
 
@@ -45,10 +55,15 @@ export function TaskModal({
   }
 
   const submit = form.handleSubmit((v) => {
-    const normalized = { ...v, project: v.project && String(v.project).trim() ? String(v.project).trim() : null, sprint: v.project && String(v.project).trim() ? v.sprint : null }
+    // Locked project context wins over the dropdown value.
+    const effectiveProject = lockedProjectId || (v.project && String(v.project).trim() ? String(v.project).trim() : '')
+    const normalized = { ...v, project: effectiveProject || null }
+    // Points / sprint / deadline were removed from the creation form.
+    delete normalized.storyPoints
+    delete normalized.sprint
+    delete normalized.dueDate
     if (employeeMode) {
-      const { dueDate: _ignored, ...rest } = normalized
-      onSubmit({ ...rest, files: pendingFiles })
+      onSubmit({ ...normalized, files: pendingFiles })
       return
     }
     onSubmit(normalized)
@@ -68,12 +83,22 @@ export function TaskModal({
     >
       <form onSubmit={submit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="sm:col-span-2">
-          <Select
-            label="Project"
-            placeholder="General Task"
-            options={[{ value: '', label: 'General Task' }, ...projects.map((p) => ({ value: p.id, label: p.name }))]}
-            {...form.register('project')}
-          />
+          {lockedProjectId ? (
+            <div>
+              <p className="mb-1 text-xs font-medium text-muted">Project</p>
+              <div className="rounded-xl border border-app bg-black/[0.02] px-3 py-2.5 text-sm font-medium dark:bg-white/[0.03]">
+                {lockedProjectName || 'Current project'}
+              </div>
+              <input type="hidden" {...form.register('project')} value={lockedProjectId} />
+            </div>
+          ) : (
+            <Select
+              label="Project"
+              placeholder="General Task"
+              options={[{ value: '', label: 'General Task' }, ...projects.map((p) => ({ value: p.id, label: p.name }))]}
+              {...form.register('project')}
+            />
+          )}
         </div>
         <div className="sm:col-span-2"><Input label="Title" error={form.formState.errors.title?.message} {...form.register('title')} /></div>
         <div className="sm:col-span-2"><Textarea label="Description" rows={2} {...form.register('description')} /></div>
@@ -82,9 +107,7 @@ export function TaskModal({
             <Select label="Type" options={TASK_TYPES.map((t) => ({ value: t, label: t }))} {...form.register('type')} />
             <Select label="Status" options={TASK_STATUSES.map((s) => ({ value: s, label: s }))} {...form.register('status')} />
             <Select label="Priority" options={PRIORITIES.map((p) => ({ value: p, label: p }))} {...form.register('priority')} />
-            {isBug
-              ? <Select label="Severity" options={SEVERITIES.map((s) => ({ value: s, label: s }))} {...form.register('severity')} />
-              : <Select label="Story Points" options={STORY_POINTS.map((p) => ({ value: p, label: `${p} pts` }))} {...form.register('storyPoints')} />}
+            {isBug && <Select label="Severity" options={SEVERITIES.map((s) => ({ value: s, label: s }))} {...form.register('severity')} />}
           </>
         )}
         <Select
@@ -122,9 +145,6 @@ export function TaskModal({
             )}
           </div>
         )}
-        {sprints && <Select label="Sprint" options={[{ value: '', label: 'Backlog' }, ...sprints.map((s) => ({ value: s.id, label: s.name }))]} {...form.register('sprint')} />}
-        {!employeeMode && <Input label="Due Date" type="date" {...form.register('dueDate')} />}
-        {!employeeMode && isBug && <Select label="Story Points" options={STORY_POINTS.map((p) => ({ value: p, label: `${p} pts` }))} {...form.register('storyPoints')} />}
       </form>
     </Modal>
   )

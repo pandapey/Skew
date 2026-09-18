@@ -13,7 +13,6 @@ import { ROLES } from '@/constants'
 const schema = z.object({
   email: z.string().email('Enter a valid email'),
   password: z.string().min(4, 'Password is too short'),
-  remember: z.boolean().optional(),
 })
 
 const container = {
@@ -76,7 +75,7 @@ export default function Login() {
 
   const { register, handleSubmit, formState: { errors } } = useForm({
     resolver: zodResolver(schema),
-    defaultValues: { email: '', password: '', remember: true },
+    defaultValues: { email: '', password: '' },
   })
 
   const onSubmit = async (values) => {
@@ -297,8 +296,8 @@ export default function Login() {
                 <div className="absolute top-0 left-1/2 -translate-x-1/2 w-1/2 h-0.5 bg-gradient-to-r from-transparent via-primary/40 to-transparent rounded-full" />
 
                 <form onSubmit={handleSubmit(onSubmit)} method="post" autoComplete="on" className="relative z-10 p-8 lg:p-10 space-y-6" noValidate>
-                  <AnimatePresence mode="wait">
-                      <motion.div variants={item}>
+                  <AnimatePresence>
+                      <motion.div key="email" variants={item}>
                         <Input
                           label="Email Address"
                           icon={FiMail}
@@ -313,7 +312,7 @@ export default function Login() {
                         />
                       </motion.div>
 
-                    <motion.div variants={item}>
+                    <motion.div key="password" variants={item}>
                       <Input
                         label="Password"
                         id="password"
@@ -345,18 +344,7 @@ export default function Login() {
                       />
                     </motion.div>
 
-                    <motion.div variants={item} className="flex items-center justify-between">
-                      <label className="relative flex items-center gap-2.5 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          className="h-4.5 w-4.5 rounded-lg border-slate-300 text-primary focus:ring-2 focus:ring-primary/20 focus:ring-offset-2 transition-all duration-200 appearance-none checked:bg-primary checked:border-primary checked:bg-no-repeat checked:bg-center"
-                          {...register('remember')}
-                        />
-                        <span className="text-sm text-muted hover:text-slate-700 dark:hover:text-slate-300 transition-colors">Remember me</span>
-                      </label>
-                    </motion.div>
-
-                    <motion.div variants={item}>
+                    <motion.div key="submit" variants={item}>
                       <Button
                         type="submit"
                         loading={loading}

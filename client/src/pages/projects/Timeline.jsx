@@ -7,9 +7,19 @@ import { PageHeader, Card, Select, Badge, Loader } from '@/components/ui'
 import { PROJECT_STATUS_TONE } from '@/features/projects/constants'
 import { formatDate } from '@/utils'
 
+// Projects created before start/deadline were collected have neither date.
+// Fall back to createdAt/updatedAt so the timeline still renders instead of
+// showing "No dated projects to display" for real data.
+export const timelineStartOf = (p) => p?.startDate || p?.createdAt || p?.createdAtFormatted || null
+export const timelineEndOf = (p) => p?.deadline || p?.updatedAt || p?.createdAt || null
+
 function useTimeline(projects) {
   return useMemo(() => {
-    const dates = projects.flatMap((p) => [p.startDate, p.deadline]).filter(Boolean).map((d) => dayjs(d))
+    const dates = projects
+      .flatMap((p) => [timelineStartOf(p), timelineEndOf(p)])
+      .filter(Boolean)
+      .map((d) => dayjs(d))
+      .filter((d) => d.isValid())
     if (!dates.length) return null
     let min = dates.reduce((a, b) => (a.isBefore(b) ? a : b)).startOf('month')
     let max = dates.reduce((a, b) => (a.isAfter(b) ? a : b)).endOf('month')
@@ -47,7 +57,7 @@ export default function Timeline() {
       ) : (
         <Card className="overflow-x-auto">
           <div className="min-w-[720px]">
-            {/* Month axis */}
+            {}
             <div className="mb-2 flex border-b border-app pb-2">
               <div className="w-48 flex-none" />
               <div className="flex flex-1">
@@ -57,11 +67,13 @@ export default function Timeline() {
               </div>
             </div>
 
-            {/* Rows */}
+            {}
             <div className="space-y-2">
               {filtered.map((p) => {
-                const left = tl.pct(p.startDate)
-                const right = tl.pct(p.deadline)
+                const start = timelineStartOf(p)
+                const end = timelineEndOf(p)
+                const left = tl.pct(start)
+                const right = tl.pct(end)
                 const width = Math.max(2, right - left)
                 return (
                   <div key={p.id} className="flex items-center">
@@ -73,7 +85,7 @@ export default function Timeline() {
                       <div
                         className="absolute top-1 flex h-5 items-center justify-between rounded-full px-2 text-[10px] font-medium text-white shadow-soft"
                         style={{ left: `${left}%`, width: `${width}%`, backgroundColor: p.color }}
-                        title={`${formatDate(p.startDate, 'DD MMM')} – ${formatDate(p.deadline, 'DD MMM')}`}
+                        title={`${formatDate(start, 'DD MMM')} – ${formatDate(end, 'DD MMM')}`}
                       >
                         <span className="truncate">{p.progress}%</span>
                       </div>
@@ -94,7 +106,7 @@ export default function Timeline() {
         </Card>
       )}
 
-      {/* Legend */}
+      {}
       {!isLoading && tl && (
         <div className="mt-4 flex flex-wrap gap-3">
           {filtered.map((p) => (

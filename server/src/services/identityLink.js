@@ -83,9 +83,12 @@ export async function linkUserToEmployee(input) {
     phone: u.phone || EMP_DEFAULTS.phone,
     department: u.department || EMP_DEFAULTS.department,
     designation: u.designation || EMP_DEFAULTS.designation,
-    avatar: u.avatar || '',
     status: mapUserStatusToEmployee(u.status),
   }
+  // Never clobber the linked Employee avatar with '' — an empty User.avatar
+  // means "unchanged", not "remove". Wiping here is what made uploaded
+  // avatars disappear after the next profile/admin sync.
+  if (u.avatar) patch.avatar = u.avatar
 
   if (u.employmentType) patch.employmentType = u.employmentType
   if (u.joiningDate) patch.joiningDate = u.joiningDate
@@ -136,7 +139,6 @@ export async function linkEmployeeToUser(input, { password } = {}) {
     department: emp.department || '',
     designation: emp.designation || '',
     phone: emp.phone || '',
-    avatar: emp.avatar || '',
     status: mapEmployeeStatusToUser(emp.status),
     empCode: emp.empCode || '',
     employeeId: String(emp._id),
@@ -148,6 +150,10 @@ export async function linkEmployeeToUser(input, { password } = {}) {
   }
 
   if (emp.gender === 'Male' || emp.gender === 'Female') base.gender = emp.gender
+  // Same rule as User -> Employee: empty Employee.avatar means "unchanged".
+  // Copying '' here wiped freshly uploaded User avatars on the next
+  // employee self-edit / admin edit.
+  if (emp.avatar) base.avatar = emp.avatar
 
   let credentials = null
   if (user) {

@@ -87,7 +87,7 @@ export default function SalaryReport() {
         <CardHeader
           title="Salary Reports"
           subtitle="Aggregated by period"
-          action={<ExportMenu rows={report.rows} columns={report.exportCols} filename={`my-salary-${reportTab}`} title={`My Salary \u2014 ${reportTab}`} subtitle="Skew Enterprise Hub" />}
+          action={<ExportMenu rows={report.rows} columns={report.exportCols} filename={`my-salary-${reportTab}`} title={`My Salary \u2014 ${reportTab}`} subtitle="Skew Infotech Pvt. Ltd." />}
         />
         <div className="mb-4 overflow-x-auto">
           <Tabs items={SALARY_REPORT_GRANULARITIES} value={reportTab} onChange={setReportTab} />

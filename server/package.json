@@ -1,7 +1,7 @@
 {
-  "name": "skew-enterprise-hub-server",
+  "name": "skew-infotech-pvt-ltd-server",
   "version": "1.0.0",
-  "description": "Express + MongoDB backend for Skew Enterprise Hub",
+  "description": "Express + MongoDB backend for Skew Infotech Pvt. Ltd.",
   "type": "module",
   "main": "src/server.js",
   "scripts": {

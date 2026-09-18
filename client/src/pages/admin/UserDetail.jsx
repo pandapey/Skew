@@ -24,7 +24,6 @@ const STATUS_TONE = {
 }
 const SEV_TONE = { Info: 'success', Warning: 'warning', Critical: 'danger' }
 
-// Human duration from ISO timestamps (e.g. "2h 5m", "45m", "30s", "—").
 const formatDuration = (loginAt, logoutAt) => {
   if (!loginAt || !logoutAt) return '—'
   const sec = Math.max(0, Math.round((new Date(logoutAt) - new Date(loginAt)) / 1000))
@@ -36,7 +35,6 @@ const formatDuration = (loginAt, logoutAt) => {
 }
 
 const idOf = (u) => u?.id || u?._id || ''
-
 
 export default function UserDetail() {
   const { id } = useParams()
@@ -65,7 +63,6 @@ export default function UserDetail() {
   const projects = projectsQuery.data || []
   const activity = activityQuery.data || []
 
-  // Notes — persisted on the user record in MongoDB (no localStorage).
   const [notes, setNotes] = useState('')
   useEffect(() => {
     if (user) setNotes(user.notes || '')
@@ -178,7 +175,7 @@ export default function UserDetail() {
         }
       />
 
-      {/* Identity header */}
+      {}
       <Card className="mb-4">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
           <Avatar name={user.name} src={user.avatar} size={64} />
@@ -204,7 +201,7 @@ export default function UserDetail() {
         <Tabs items={TABS} value={tab} onChange={setTab} className="min-w-max" />
       </div>
 
-      {/* Overview */}
+      {}
       {tab === 'overview' && (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
           <Card>
@@ -231,7 +228,7 @@ export default function UserDetail() {
         </div>
       )}
 
-      {/* Projects */}
+      {}
       {tab === 'projects' && (
         <Card>
           <CardHeader title="Assigned Projects" subtitle="Projects this user participates in" />
@@ -255,7 +252,7 @@ export default function UserDetail() {
         </Card>
       )}
 
-      {/* Activity */}
+      {}
       {tab === 'activity' && (
         <Card>
           <CardHeader title="Recent Activity" />
@@ -277,7 +274,7 @@ export default function UserDetail() {
         </Card>
       )}
 
-      {/* Audit History */}
+      {}
       {tab === 'audit' && (
         <Card>
           <div className="mb-3 flex items-center justify-between gap-2">
@@ -285,13 +282,13 @@ export default function UserDetail() {
             <ExportMenu rows={auditRows} columns={[
               { header: 'Time', accessor: 'time' }, { header: 'Action', accessor: 'action' },
               { header: 'Module', accessor: 'module' }, { header: 'Severity', accessor: 'severity' }, { header: 'IP', accessor: 'ip' },
-            ]} filename="user-audit" title={`Audit — ${user.name}`} subtitle="Skew Enterprise Hub" />
+            ]} filename="user-audit" title={`Audit — ${user.name}`} subtitle="Skew Infotech Pvt. Ltd." />
           </div>
           <DataTable columns={auditCols} data={auditRows} loading={auditQuery.isLoading} empty="No audit records" />
         </Card>
       )}
 
-      {/* Login History */}
+      {}
       {tab === 'login' && (
         <Card>
           <div className="mb-3 flex items-center justify-between gap-2">
@@ -300,7 +297,7 @@ export default function UserDetail() {
               { header: 'Login At', accessor: 'loginAt' }, { header: 'Logout At', accessor: 'logoutAt' },
               { header: 'Device', accessor: 'device' }, { header: 'Browser', accessor: 'browser' },
               { header: 'OS', accessor: 'os' }, { header: 'IP', accessor: 'ip' }, { header: 'Status', accessor: 'status' },
-            ]} filename="user-logins" title={`Logins — ${user.name}`} subtitle="Skew Enterprise Hub" />
+            ]} filename="user-logins" title={`Logins — ${user.name}`} subtitle="Skew Infotech Pvt. Ltd." />
           </div>
           {loginQuery.isError ? (
             <div className="rounded-xl border border-danger/30 bg-danger/5 p-4 text-sm text-danger">
@@ -317,7 +314,7 @@ export default function UserDetail() {
         </Card>
       )}
 
-      {/* Notes */}
+      {}
       {tab === 'notes' && (
         <Card>
           <CardHeader title="Notes" subtitle="Private notes, stored in MongoDB" />
@@ -335,7 +332,7 @@ export default function UserDetail() {
         </Card>
       )}
 
-      {/* Reset modal */}
+      {}
       <Modal
         open={modal === 'reset'}
         onClose={closeReset}

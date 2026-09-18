@@ -298,6 +298,18 @@ export const employeeService = {
     if (!_id) throw new ApiError(404, 'Employee not found')
     const updated = await repo.updateById(_id, { avatar: url })
     if (!updated) throw new ApiError(404, 'Employee not found')
+    // Keep linked User in sync — otherwise the next user-driven sync
+    // (linkUserToEmployee) would see a stale User.avatar and wipe this photo.
+    try {
+      const { User } = await import('../models/User.js')
+      const emp = updated?.toObject ? updated.toObject() : updated
+      const or = [{ employeeId: String(_id) }]
+      if (emp?.userId) or.push({ _id: emp.userId })
+      if (emp?.email) or.push({ email: emp.email })
+      await User.updateMany({ $or: or }, { $set: { avatar: url } })
+    } catch (syncErr) {
+      console.error('[employee-photo] User sync failed:', syncErr?.message || syncErr)
+    }
     return { avatar: url }
   },
 

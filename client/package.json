@@ -1,9 +1,9 @@
 {
-  "name": "skew-enterprise-hub-client",
+  "name": "skew-infotech-pvt-ltd-client",
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "Skew Enterprise Hub — Enterprise Office Management System for Skew Infotech Pvt. Ltd.",
+  "description": "Skew Infotech Pvt. Ltd. — Enterprise Office Management System for Skew Infotech Pvt. Ltd.",
   "scripts": {
     "dev": "vite",
     "build": "vite build",

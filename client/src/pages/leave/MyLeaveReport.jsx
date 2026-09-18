@@ -79,7 +79,7 @@ function rangeFor(tab, f) {
     const start = dayjs(`${f.year}-${String(f.month + 1).padStart(2, '0')}-01`)
     return { from: start.format('YYYY-MM-DD'), to: start.endOf('month').format('YYYY-MM-DD') }
   }
-  return { from: `${f.year}-01-01`, to: `${f.year}-12-31` } // yearly
+  return { from: `${f.year}-01-01`, to: `${f.year}-12-31` }
 }
 
 export default function MyLeaveReport() {
@@ -153,7 +153,7 @@ export default function MyLeaveReport() {
         <CardHeader
           title={`${TABS.find((t) => t.key === tab).label} Report`}
           subtitle={label}
-          action={<ExportMenu rows={rows} columns={EXPORT_COLUMNS} filename={filename} title={`My Leave \u2014 ${label}`} subtitle="Skew Enterprise Hub" />}
+          action={<ExportMenu rows={rows} columns={EXPORT_COLUMNS} filename={filename} title={`My Leave \u2014 ${label}`} subtitle="Skew Infotech Pvt. Ltd." />}
         />
 
         <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -191,7 +191,7 @@ export default function MyLeaveReport() {
           />
         </div>
 
-        {/* Period summary. */}
+        {}
         <div className="mb-4 grid grid-cols-2 gap-4 md:grid-cols-4 lg:grid-cols-7">
           <StatCard label="Total Days" value={summary.days} icon={FiCalendar} tone="primary" />
           <StatCard label="Approved" value={summary.approved} icon={FiCheck} tone="success" />

@@ -43,7 +43,12 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const app = express()
 
 app.set('trust proxy', 1)
-app.use(helmet())
+// Avatar / file bytes are loaded cross-origin via <img> (frontend :5173,
+// live Vercel/Netlify domain) from the API origin. Helmet's default
+// `Cross-Origin-Resource-Policy: same-origin` makes browsers block those
+// images after reload (blob: preview works, remote URL 404s in effect).
+// Disable CORP/COEP for this API so GridFS streams are embeddable.
+app.use(helmet({ crossOriginResourcePolicy: false, crossOriginEmbedderPolicy: false }))
 app.use(cors(corsOptions))
 // Explicit preflight handler (Express 4 + cors already handles OPTIONS,
 // this guarantees 204 + headers even if a route is missing).

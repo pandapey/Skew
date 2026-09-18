@@ -60,7 +60,7 @@ export default function SalaryHistory() {
         actions={<Button variant="ghost" icon={FiArrowLeft} onClick={() => navigate('/profile/salary')}>Back to Salary</Button>}
       />
 
-      {/* Filters + Search */}
+      {}
       <Card className="mb-4">
         <CardHeader title="Filters" subtitle="Narrow down your payroll records" />
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -82,7 +82,7 @@ export default function SalaryHistory() {
         <CardHeader
           title="Monthly Salary History"
           subtitle="Salary timeline and payment status \u2014 previous payroll records"
-          action={<ExportMenu rows={filteredHistory} columns={HISTORY_EXPORT_COLUMNS} filename="my-salary-history" title="My Salary History" subtitle="Skew Enterprise Hub" />}
+          action={<ExportMenu rows={filteredHistory} columns={HISTORY_EXPORT_COLUMNS} filename="my-salary-history" title="My Salary History" subtitle="Skew Infotech Pvt. Ltd." />}
         />
         <SalaryTable
           columns={historyColumns}

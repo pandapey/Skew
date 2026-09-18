@@ -97,6 +97,18 @@ export async function updateAvatar(req, res) {
     }
     req.user.avatar = gridFsId
     await req.user.save({ validateBeforeSave: false })
+    // Keep linked Employee in sync — otherwise the next employee-driven
+    // sync (linkEmployeeToUser) would see a stale/empty Employee.avatar
+    // and wipe this fresh upload from the User.
+    try {
+      const { Employee } = await import('../models/Employee.js')
+      await Employee.updateMany(
+        { $or: [{ userId: req.user._id }, { email: req.user.email }] },
+        { $set: { avatar: gridFsId } },
+      )
+    } catch (syncErr) {
+      console.error('[avatar] Employee sync failed:', syncErr?.message || syncErr)
+    }
     const safe = req.user.toObject()
     delete safe.password
     res.json({ avatar: gridFsId, user: safe })
@@ -112,6 +124,13 @@ export async function deleteAvatar(req, res) {
   }
   req.user.avatar = ''
   await req.user.save({ validateBeforeSave: false })
+  try {
+    const { Employee } = await import('../models/Employee.js')
+    await Employee.updateMany(
+      { $or: [{ userId: req.user._id }, { email: req.user.email }] },
+      { $set: { avatar: '' } },
+    )
+  } catch {}
   const safe = req.user.toObject()
   delete safe.password
   res.json({ avatar: '', user: safe })

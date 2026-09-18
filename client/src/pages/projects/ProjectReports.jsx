@@ -32,10 +32,10 @@ export default function ProjectReports() {
       <PageHeader
         title="Reports & Analytics"
         subtitle="Delivery health, throughput and workload across all projects."
-        actions={<ExportMenu rows={exportRows} columns={exportCols} filename="project-report" title="Project Report" subtitle="Skew Enterprise Hub" />}
+        actions={<ExportMenu rows={exportRows} columns={exportCols} filename="project-report" title="Project Report" subtitle="Skew Infotech Pvt. Ltd." />}
       />
 
-      {/* KPIs */}
+      {}
       <div className="mb-4 grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard label="Projects" value={stats.totalProjects} icon={FiFolder} />
         <StatCard label="Active" value={stats.activeProjects} icon={FiActivity} tone="primary" />
@@ -49,7 +49,7 @@ export default function ProjectReports() {
         <StatCard label="Milestones" value={`${stats.milestonesReached}/${stats.totalMilestones}`} icon={FiFlag} tone="primary" />
       </div>
 
-      {/* Charts */}
+      {}
       <div className="mb-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-2">
           <CardHeader title="Task Throughput" subtitle="Created vs completed over time" />
@@ -86,7 +86,7 @@ export default function ProjectReports() {
         </Card>
       </div>
 
-      {/* Project progress table */}
+      {}
       <Card>
         <CardHeader title="Project Progress" subtitle={`${projects.length} projects`} />
         <div className="space-y-3">

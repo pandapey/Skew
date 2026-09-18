@@ -76,6 +76,17 @@ export async function streamGridFSFile(gridFsId, res, { filename, contentType, d
   const type = contentType || meta.contentType || 'application/octet-stream'
   res.setHeader('Content-Type', type)
   if (typeof meta.length === 'number') res.setHeader('Content-Length', String(meta.length))
+  // Allow cross-origin <img> embeds (frontend lives on a different origin
+  // than the API). Without this, browsers block avatar/file images when
+  // the API sends Helmet's default CORP: same-origin.
+  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin')
+  // Avatars are immutable per GridFS id — cache for a year to avoid
+  // flicker/disappear on reload. Downloads stay uncached.
+  if (disposition === 'inline') {
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable')
+  } else {
+    res.setHeader('Cache-Control', 'private, max-age=0, must-revalidate')
+  }
   // inline for preview (images/pdf/video), attachment for downloads
   const safeName = String(name).replace(/"/g, '')
   res.setHeader('Content-Disposition', `${disposition}; filename="${safeName}"`)

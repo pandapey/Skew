@@ -11,7 +11,7 @@ const PAGE_SIZE = 12
 
 const INITIAL = {
   search: '', level: '', source: '',
-  // `at` is the event time; `createdAt` (the backend default) is insert time.
+
   sortBy: 'at', order: 'desc',
 }
 
@@ -49,7 +49,7 @@ export default function SystemLogs() {
       <PageHeader
         title="System Logs"
         subtitle="Application and infrastructure events."
-        actions={<ExportMenu rows={rows} columns={exportCols} filename="system-logs" title="System Logs" subtitle="Skew Enterprise Hub" />}
+        actions={<ExportMenu rows={rows} columns={exportCols} filename="system-logs" title="System Logs" subtitle="Skew Infotech Pvt. Ltd." />}
       />
 
       <Card>

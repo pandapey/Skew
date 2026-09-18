@@ -362,7 +362,7 @@ async function seed() {
 
   await ClientAnnouncement.insertMany(Array.from({ length: 20 }, (_, i) => ({
     title: pick(['New Feature Released', 'Scheduled Maintenance', 'Holiday Hours', 'Security Update', 'Product Webinar', 'Policy Change'], i),
-    body: 'We are pleased to share an update regarding your engagement with Skew Enterprise Hub.',
+    body: 'We are pleased to share an update regarding your engagement with Skew Infotech Pvt. Ltd.',
     date: fdate(2026, 7 + (i % 3), 1 + (i % 27)),
     tag: pick(['Update', 'Announcement', 'Event', 'Maintenance'], i), pinned: i % 6 === 0,
   })))

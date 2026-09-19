@@ -5,9 +5,9 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import toast from 'react-hot-toast'
-import { FiArrowLeft, FiGlobe, FiRefreshCw, FiPlus, FiX } from 'react-icons/fi'
+import { FiArrowLeft, FiGlobe, FiRefreshCw } from 'react-icons/fi'
 import { PageHeader, Card, Button, Input, Select, Loader, EmptyState } from '@/components/ui'
-import { domainApi, registrarApi } from '@/features/infrastructure/infrastructureService'
+import { domainApi } from '@/features/infrastructure/infrastructureService'
 import { adminApi } from '@/api/adminApi'
 import { countdownFor, daysUntil, WINDOW_DAYS } from '@/utils/renewal'
 import { formatDate } from '@/utils'
@@ -50,10 +50,10 @@ export default function DomainForm() {
     select: (res) => (Array.isArray(res) ? res : res?.data || []),
   })
 
-  const { data: registrarRows = [] } = useQuery({
-    queryKey: ['registrars'],
-    queryFn: () => registrarApi.list(),
-    staleTime: 30_000,
+  const { data: domainPlanRows = [] } = useQuery({
+    queryKey: ['admin-domain-plans', 'options'],
+    queryFn: () => adminApi.domainPlans.all(),
+    staleTime: 60_000,
     select: (res) => (Array.isArray(res) ? res : res?.data || []),
   })
 
@@ -75,21 +75,21 @@ export default function DomainForm() {
   })
 
   const [renewLoading, setRenewLoading] = useState(false)
-  const [registrarMode, setRegistrarMode] = useState('select') // select | update | other
+  const [registrarMode, setRegistrarMode] = useState('select') // select | other
   const [customRegistrar, setCustomRegistrar] = useState('')
-  const [newRegistrarInput, setNewRegistrarInput] = useState('')
   const [registrarSelectValue, setRegistrarSelectValue] = useState('')
 
   const registrarOptions = useMemo(() => {
-    const rows = Array.isArray(registrarRows) ? registrarRows : []
-    const names = rows.map((r) => r.name || r.label || String(r)).filter(Boolean)
-    // ensure existing registrar is included even if not yet in list (optimistic)
+    const rows = Array.isArray(domainPlanRows) ? domainPlanRows : []
+    const active = rows.filter((p) => p && p.name && (!p.status || p.status === 'Active'))
+    const names = active.map((p) => p.name).filter(Boolean)
+    // ensure existing registrar is included even if its plan is inactive/renamed
     if (existing?.registrar && !names.some((n) => n.toLowerCase() === String(existing.registrar).toLowerCase())) {
       names.unshift(existing.registrar)
     }
-    const base = [{ value: '', label: 'Select a registrar' }, ...names.map((n) => ({ value: n, label: n }))]
-    return [...base, { value: '__update', label: 'Update Registrar' }, { value: '__other', label: 'Other' }]
-  }, [registrarRows, existing?.registrar])
+    const base = [{ value: '', label: 'Select a registrar (Domain Plan)' }, ...names.map((n) => ({ value: n, label: n }))]
+    return [...base, { value: '__other', label: 'Other' }]
+  }, [domainPlanRows, existing?.registrar])
 
   useEffect(() => {
     if (!existing) return
@@ -120,28 +120,8 @@ export default function DomainForm() {
     if (cid) form.setValue('client', cid)
   }, [isEdit])
 
-  const addRegistrarMutation = useMutation({
-    mutationFn: (name) => registrarApi.create(name),
-    onSuccess: (res) => {
-      const name = res?.name || newRegistrarInput.trim()
-      toast.success(`Registrar "${name}" added`)
-      qc.invalidateQueries({ queryKey: ['registrars'] })
-      // auto-select the newly added registrar for this domain
-      setNewRegistrarInput('')
-      setRegistrarMode('select')
-      setRegistrarSelectValue(name)
-      form.setValue('registrar', name)
-    },
-    onError: (err) => toast.error(err?.response?.data?.message || 'Could not add registrar'),
-  })
-
   const handleRegistrarSelect = (e) => {
     const v = e.target.value
-    if (v === '__update') {
-      setRegistrarMode('update')
-      setRegistrarSelectValue('__update')
-      return
-    }
     if (v === '__other') {
       setRegistrarMode('other')
       setRegistrarSelectValue('__other')
@@ -161,7 +141,7 @@ export default function DomainForm() {
         effectiveRegistrar = String(customRegistrar || '').trim()
         if (!effectiveRegistrar) effectiveRegistrar = ''
       }
-      if (effectiveRegistrar === '__update' || effectiveRegistrar === '__other') effectiveRegistrar = ''
+      if (effectiveRegistrar === '__other') effectiveRegistrar = ''
       const payload = {
         domainName: String(values.domainName).trim(),
         client: values.client,
@@ -175,7 +155,7 @@ export default function DomainForm() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['domains'] })
       qc.invalidateQueries({ queryKey: ['domains-summary'] })
-      qc.invalidateQueries({ queryKey: ['registrars'] })
+      qc.invalidateQueries({ queryKey: ['admin-domain-plans'] })
       if (isEdit) qc.invalidateQueries({ queryKey: ['domain', id] })
       toast.success(isEdit ? 'Domain updated' : 'Domain added')
       navigate('/domains?saved=1')
@@ -250,22 +230,11 @@ export default function DomainForm() {
               </div>
               <Select label="Client *" value={form.watch('client')} onChange={(e) => form.setValue('client', e.target.value, { shouldValidate: true })} options={clientOptions} error={form.formState.errors.client?.message} searchable />
               <div>
-                <Select label="Registrar" value={registrarMode === 'other' || registrarMode === 'update' ? registrarSelectValue : (form.watch('registrar') || registrarSelectValue)} onChange={handleRegistrarSelect} options={registrarOptions} searchable placeholder="Select a registrar" />
+                <Select label="Registrar (Domain Plan)" value={registrarMode === 'other' ? registrarSelectValue : (form.watch('registrar') || registrarSelectValue)} onChange={handleRegistrarSelect} options={registrarOptions} searchable placeholder="Select from Domain Plans" />
                 {registrarMode === 'other' && (
                   <div className="mt-2">
                     <Input label="Registrar Name *" placeholder="Enter registrar name" value={customRegistrar} onChange={(e) => setCustomRegistrar(e.target.value)} />
-                    <p className="mt-1 text-xs text-muted">This registrar will be saved for this domain and added to the shared list if new.</p>
-                  </div>
-                )}
-                {registrarMode === 'update' && (
-                  <div className="mt-2 rounded-xl border border-app bg-black/[0.02] p-3 dark:bg-white/[0.04]">
-                    <p className="mb-2 text-xs font-semibold text-muted">Add or update registrar for future domains</p>
-                    <div className="flex items-center gap-2">
-                      <input value={newRegistrarInput} onChange={(e) => setNewRegistrarInput(e.target.value)} placeholder="New registrar name" className="input flex-1" />
-                      <Button type="button" size="sm" icon={FiPlus} loading={addRegistrarMutation.isPending} disabled={!newRegistrarInput.trim()} onClick={() => addRegistrarMutation.mutate(newRegistrarInput.trim())}>Add</Button>
-                      <Button type="button" size="sm" variant="ghost" icon={FiX} onClick={() => { setRegistrarMode('select'); setRegistrarSelectValue(form.watch('registrar') || ''); setNewRegistrarInput('') }}>Cancel</Button>
-                    </div>
-                    {addRegistrarMutation.isError && <p className="mt-1 text-xs text-danger">{addRegistrarMutation.error?.response?.data?.message || 'Failed'}</p>}
+                    <p className="mt-1 text-xs text-muted">Choose from Admin → Domain Plans. Use Other only for a one-off registrar.</p>
                   </div>
                 )}
               </div>

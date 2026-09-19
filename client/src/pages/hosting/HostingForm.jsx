@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import toast from 'react-hot-toast'
-import { FiArrowLeft, FiServer, FiRefreshCw, FiPlus, FiX } from 'react-icons/fi'
+import { FiArrowLeft, FiServer, FiRefreshCw } from 'react-icons/fi'
 import { PageHeader, Card, Button, Input, Select, Loader, EmptyState } from '@/components/ui'
-import { hostingApi, domainApi, registrarApi } from '@/features/infrastructure/infrastructureService'
+import { hostingApi, domainApi } from '@/features/infrastructure/infrastructureService'
 import { adminApi } from '@/api/adminApi'
 import { countdownFor, daysUntil, WINDOW_DAYS } from '@/utils/renewal'
 import { formatDate } from '@/utils'
@@ -51,10 +51,10 @@ export default function HostingForm() {
     select: (res) => (Array.isArray(res) ? res : res?.data || []),
   })
 
-  const { data: registrarRows = [] } = useQuery({
-    queryKey: ['registrars'],
-    queryFn: () => registrarApi.list(),
-    staleTime: 30_000,
+  const { data: domainPlanRows = [] } = useQuery({
+    queryKey: ['admin-domain-plans', 'options'],
+    queryFn: () => adminApi.domainPlans.all(),
+    staleTime: 60_000,
     select: (res) => (Array.isArray(res) ? res : res?.data || []),
   })
 
@@ -78,33 +78,45 @@ export default function HostingForm() {
   const selectedClient = form.watch('client')
 
   const { data: domainLookup = [], isFetching: domainsFetching } = useQuery({
-    queryKey: ['domains-lookup', selectedClient],
-    queryFn: () => domainApi.lookup(selectedClient),
-    enabled: Boolean(selectedClient),
+    queryKey: ['domains-lookup', selectedClient || 'all'],
+    queryFn: () => domainApi.lookup(selectedClient || undefined),
     staleTime: 30_000,
+    placeholderData: keepPreviousData,
+    select: (res) => (Array.isArray(res) ? res : res?.data || []),
   })
 
   const domainOptions = useMemo(() => {
     const base = [{ value: '', label: 'No domain linked' }]
-    const rows = Array.isArray(domainLookup) ? domainLookup : domainLookup?.data || []
-    const list = Array.isArray(rows) ? rows : []
-    return [...base, ...list.map((d) => ({ value: String(d.value || d._id || d.id), label: d.label || d.domainName || String(d.value) }))]
-  }, [domainLookup])
+    const rows = Array.isArray(domainLookup) ? domainLookup : []
+    const list = rows.map((d) => ({ value: String(d.value || d._id || d.id), label: d.label || d.domainName || String(d.value ?? '') })).filter((o) => o.value)
+    // Keep currently-saved domain visible even if lookup hasn't returned it yet (edit mode)
+    if (existing?.domain) {
+      const cur = String(existing.domain)
+      const curLabel = existing.domainName || cur
+      if (cur && !list.some((o) => o.value === cur)) {
+        list.unshift({ value: cur, label: curLabel })
+      }
+    }
+    if (existing?.domainName && existing?.domain && !list.some((o) => o.label === existing.domainName)) {
+      // label already handled above; nothing extra needed
+    }
+    return [...base, ...list]
+  }, [domainLookup, existing?.domain, existing?.domainName])
 
   const [providerMode, setProviderMode] = useState('select')
   const [customProvider, setCustomProvider] = useState('')
-  const [newProviderInput, setNewProviderInput] = useState('')
   const [providerSelectValue, setProviderSelectValue] = useState('')
 
   const providerOptions = useMemo(() => {
-    const rows = Array.isArray(registrarRows) ? registrarRows : []
-    const names = rows.map((r) => r.name || r.label || String(r)).filter(Boolean)
+    const rows = Array.isArray(domainPlanRows) ? domainPlanRows : []
+    const active = rows.filter((p) => p && p.name && (!p.status || p.status === 'Active'))
+    const names = active.map((p) => p.name).filter(Boolean)
     if (existing?.provider && !names.some((n) => n.toLowerCase() === String(existing.provider).toLowerCase())) {
       names.unshift(existing.provider)
     }
-    const base = [{ value: '', label: 'Select a provider' }, ...names.map((n) => ({ value: n, label: n }))]
-    return [...base, { value: '__update', label: 'Update Registrar' }, { value: '__other', label: 'Other' }]
-  }, [registrarRows, existing?.provider])
+    const base = [{ value: '', label: 'Select a provider (Domain Plan)' }, ...names.map((n) => ({ value: n, label: n }))]
+    return [...base, { value: '__other', label: 'Other' }]
+  }, [domainPlanRows, existing?.provider])
 
   useEffect(() => {
     if (!existing) return
@@ -135,27 +147,8 @@ export default function HostingForm() {
     if (cid) form.setValue('client', cid)
   }, [isEdit])
 
-  const addProviderMutation = useMutation({
-    mutationFn: (name) => registrarApi.create(name),
-    onSuccess: (res) => {
-      const name = res?.name || newProviderInput.trim()
-      toast.success(`Provider "${name}" added`)
-      qc.invalidateQueries({ queryKey: ['registrars'] })
-      setNewProviderInput('')
-      setProviderMode('select')
-      setProviderSelectValue(name)
-      form.setValue('provider', name)
-    },
-    onError: (err) => toast.error(err?.response?.data?.message || 'Could not add provider'),
-  })
-
   const handleProviderSelect = (e) => {
     const v = e.target.value
-    if (v === '__update') {
-      setProviderMode('update')
-      setProviderSelectValue('__update')
-      return
-    }
     if (v === '__other') {
       setProviderMode('other')
       setProviderSelectValue('__other')
@@ -180,7 +173,7 @@ export default function HostingForm() {
       if (providerMode === 'other') {
         effectiveProvider = String(customProvider || '').trim()
       }
-      if (effectiveProvider === '__update' || effectiveProvider === '__other') effectiveProvider = ''
+      if (effectiveProvider === '__other') effectiveProvider = ''
       const payload = {
         client: values.client,
         domain: values.domain || null,
@@ -194,7 +187,7 @@ export default function HostingForm() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['hosting'] })
       qc.invalidateQueries({ queryKey: ['hosting-summary'] })
-      qc.invalidateQueries({ queryKey: ['registrars'] })
+      qc.invalidateQueries({ queryKey: ['admin-domain-plans'] })
       if (isEdit) qc.invalidateQueries({ queryKey: ['hosting', id] })
       toast.success(isEdit ? 'Hosting updated' : 'Hosting added')
       navigate('/hosting?saved=1')
@@ -263,8 +256,13 @@ export default function HostingForm() {
           <div>
             <h4 className="mb-3 text-sm font-semibold text-muted">Assignment</h4>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <Select label="Client *" value={form.watch('client')} onChange={handleClientChange} options={clientOptions} error={form.formState.errors.client?.message} searchable />
-              <Select label="Linked domain" value={form.watch('domain')} onChange={(e) => form.setValue('domain', e.target.value)} options={domainOptions} searchable loading={domainsFetching} />
+              <Select label="Client *" value={form.watch('client')} onChange={handleClientChange} options={clientOptions} error={form.formState.errors.client?.message} searchable placeholder="Select a client" />
+              <div className="min-w-0">
+                <Select label="Linked domain" value={form.watch('domain') || ''} onChange={(e) => form.setValue('domain', e.target.value)} options={domainOptions} searchable loading={domainsFetching} placeholder={selectedClient ? 'Select a domain for this client' : 'Select a client first'} emptyText={selectedClient ? (domainsFetching ? 'Loading domains…' : 'No domains for this client — add one in Domains first') : 'Select a client to see its domains'} />
+                {selectedClient && !domainsFetching && domainOptions.length <= 1 && (
+                  <p className="mt-1 text-xs text-muted">This client has no linked domains yet. Add one via Domains → New Domain.</p>
+                )}
+              </div>
             </div>
           </div>
 
@@ -272,21 +270,11 @@ export default function HostingForm() {
             <h4 className="mb-3 text-sm font-semibold text-muted">Plan</h4>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
-                <Select label="Provider" value={providerMode === 'other' || providerMode === 'update' ? providerSelectValue : (form.watch('provider') || providerSelectValue)} onChange={handleProviderSelect} options={providerOptions} searchable placeholder="Select a provider" />
+                <Select label="Provider (Domain Plan)" value={providerMode === 'other' ? providerSelectValue : (form.watch('provider') || providerSelectValue)} onChange={handleProviderSelect} options={providerOptions} searchable placeholder="Select from Domain Plans" />
                 {providerMode === 'other' && (
                   <div className="mt-2">
                     <Input label="Provider Name *" placeholder="Enter provider name" value={customProvider} onChange={(e) => setCustomProvider(e.target.value)} />
-                    <p className="mt-1 text-xs text-muted">This provider will be saved for this hosting plan and added to the shared list if new.</p>
-                  </div>
-                )}
-                {providerMode === 'update' && (
-                  <div className="mt-2 rounded-xl border border-app bg-black/[0.02] p-3 dark:bg-white/[0.04]">
-                    <p className="mb-2 text-xs font-semibold text-muted">Add or update provider for future hosting</p>
-                    <div className="flex items-center gap-2">
-                      <input value={newProviderInput} onChange={(e) => setNewProviderInput(e.target.value)} placeholder="New provider name" className="input flex-1" />
-                      <Button type="button" size="sm" icon={FiPlus} loading={addProviderMutation.isPending} disabled={!newProviderInput.trim()} onClick={() => addProviderMutation.mutate(newProviderInput.trim())}>Add</Button>
-                      <Button type="button" size="sm" variant="ghost" icon={FiX} onClick={() => { setProviderMode('select'); setProviderSelectValue(form.watch('provider') || ''); setNewProviderInput('') }}>Cancel</Button>
-                    </div>
+                    <p className="mt-1 text-xs text-muted">Choose from Admin → Domain Plans. Use Other only for a one-off provider.</p>
                   </div>
                 )}
               </div>

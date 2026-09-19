@@ -7,14 +7,9 @@ import { Project, ProjectTask } from '../models/projectModels.js'
 import { Client, ClientProject } from '../models/clientModels.js'
 import { ClientNotification } from '../models/clientModels.js'
 import { CalendarEvent } from '../models/calendarModels.js'
-// PHASE SALARY/PROJECT AUDIT (DASHBOARD BUG 1): the EXISTING visibility rules
-// are imported, never re-derived, so the dashboard can never show a task or a
-// meeting that the Tasks page / Calendar would hide from the same user.
 import { accessibleProjectFilter } from '../services/projectService.js'
 import { meetingVisibilityFilter } from './calendarController.js'
 
-// Home-dashboard stats matching the shape dashboardService.stats consumes
-// (services.js). Built from live collections instead of the in-memory store.
 export const dashboardStats = asyncHandler(async (req, res) => {
   const now = new Date()
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
@@ -27,22 +22,14 @@ export const dashboardStats = asyncHandler(async (req, res) => {
   ] = await Promise.all([
     Employee.estimatedDocumentCount(),
     Project.countDocuments({ status: 'Active' }),
-    // PHASE DASHBOARD (TASK 1) ROOT CAUSE FIX: the client count was previously
-    // derived from `ClientProject.estimatedDocumentCount()` — i.e. the number of
-    // client-project rows — which EXCLUDED every client that had no project
-    // assigned. The authoritative source for "clients in the system" is the Client
-    // collection itself (Client.clientId — the organisation record), which every
-    // client-portal User is linked to via User.clientId === Client.clientId.
-    // Counting Client documents gives the true total: clients with projects,
-    // without projects, newly created and existing.
     Client.countDocuments(),
     LeaveRequest.countDocuments({ status: 'Pending' }),
     Transaction.aggregate([
-      { $match: { type: 'Income', date: { $gte: monthStart.toISOString().slice(0, 10) } } },
+      { $match: { type: 'Income', date: { $gte: monthStart.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }) } } },
       { $group: { _id: null, total: { $sum: '$amount' } } },
     ]),
     Transaction.aggregate([
-      { $match: { type: 'Income', date: { $gte: prevMonthStart.toISOString().slice(0, 10), $lt: monthStart.toISOString().slice(0, 10) } } },
+      { $match: { type: 'Income', date: { $gte: prevMonthStart.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }), $lt: monthStart.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }) } } },
       { $group: { _id: null, total: { $sum: '$amount' } } },
     ]),
     Employee.find().sort({ createdAt: -1 }).limit(6).lean(),
@@ -50,35 +37,12 @@ export const dashboardStats = asyncHandler(async (req, res) => {
     LeaveRequest.find().sort({ createdAt: -1 }).limit(6).lean(),
   ])
 
-  // Real financial + attendance breakdowns straight from MongoDB so the
-  // dashboard charts are never placeholders.
   const fin = await computeFinance({})
-  const att = await computeAttendance({})
-
-  // -------------------------------------------------------------------------
-  // PHASE SALARY/PROJECT AUDIT (DASHBOARD BUG 1) — "My Tasks" AND "Upcoming
-  // Meetings" WERE HARDCODED EMPTY ARRAYS.
-  //
-  // TRACE: pages/ClassicDashboard.jsx renders a "My Tasks" widget from
-  //        `data.tasks` and an "Upcoming Meetings" widget from `data.meetings`
-  //        -> dashboardService.stats() -> GET /api/dashboard/stats -> here.
-  //
-  // ROOT CAUSE: this handler shipped `tasks: []` and `meetings: []` as literals.
-  // Both collections exist and are populated (ProjectTask, CalendarEvent), so
-  // the two widgets rendered their empty state permanently for Admin, HR,
-  // Manager and Client — "No open tasks yet." / "No upcoming events." — and the
-  // widget was indistinguishable from a genuinely empty account. That is the
-  // "mock data still being used where MongoDB data should be" case.
-  //
-  // FIX: read the real collections, scoped by the EXISTING authorization
-  // helpers rather than a new rule:
-  //   * tasks    -> ProjectTask assigned to the caller by name, restricted to
-  //                 projects accessibleProjectFilter() already grants them.
-  //                 Same scope projectService.tasks() applies, so the dashboard
-  //                 can never show a task the Tasks page would hide.
-  //   * meetings -> CalendarEvent filtered by meetingVisibilityFilter(), the
-  //                 same scope GET /calendar/list and /calendar/range use.
-  // `projectId` / `id` ride along so the widgets can navigate to the record.
+  const _nowForAtt = new Date()
+  const _pad2 = (n) => String(n).padStart(2, '0')
+  const _lastDay = new Date(_nowForAtt.getFullYear(), _nowForAtt.getMonth() + 1, 0).getDate()
+  const _monthPrefix = `${_nowForAtt.getFullYear()}-${_pad2(_nowForAtt.getMonth() + 1)}`
+  const att = await computeAttendance({ from: `${_monthPrefix}-01`, to: `${_monthPrefix}-${_pad2(_lastDay)}` })
   const upcomingFrom = new Date()
   const meetingScope = await meetingVisibilityFilter(req.user)
   const meetingFilter = { start: { $gte: upcomingFrom } }
@@ -104,7 +68,6 @@ export const dashboardStats = asyncHandler(async (req, res) => {
     due: t.dueDate || null,
     priority: t.priority || 'Medium',
     status: t.status,
-    // The widget links through to the owning project's detail page.
     projectId: t.project ? String(t.project) : null,
   }))
 
@@ -112,8 +75,6 @@ export const dashboardStats = asyncHandler(async (req, res) => {
     id: String(m._id),
     title: m.title,
     start: m.start,
-    // Preserved as a preformatted label because the existing widget renders
-    // `m.time` directly; `start` is also exposed for callers that format it.
     time: m.start ? new Date(m.start).toLocaleString() : '',
     attendees: (m.attendees || []).length,
     type: m.type || 'event',
@@ -137,20 +98,10 @@ export const dashboardStats = asyncHandler(async (req, res) => {
   res.json({
     employees, projects, clients, pendingLeaves,
     trends: {
-      // PHASE SALARY/PROJECT AUDIT: these four were literal `0`s. StatCard's own
-      // contract is "only show the trend chip when a real, finite number was
-      // computed — never fabricate a 'vs last month' delta", and 0 IS finite, so
-      // every one of these KPI cards rendered a confident "0% vs last month" for
-      // a month-over-month comparison that was never calculated. `null` is the
-      // honest value and makes StatCard omit the chip, exactly as designed.
-      // `revenue` below is genuinely derived (this month vs last month of Income
-      // transactions) and is unchanged.
       employees: null, projects: null, clients: null, pendingLeaves: null,
       revenue: revenueTrend, profitMargin: fin.kpis.profitMargin,
     },
-    // Real monthly revenue vs expense (computed from Finance transactions).
     revenue: fin.charts.monthlyTrend,
-    // Real weekly attendance split (present vs absent) from Attendance docs.
     attendance: att.charts.monthlyTrend.map((w) => ({ day: w.week, present: w.present, absent: w.absent })),
     activities: feed,
     meetings: upcomingMeetings,
@@ -178,7 +129,6 @@ function timeAgo(input) {
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
-// --- small aggregation helpers (all run in JS over fetched docs) ---
 const countBy = (arr, keyFn) => {
   const m = {}
   arr.forEach((x) => { const k = keyFn(x); m[k] = (m[k] || 0) + 1 })
@@ -187,7 +137,6 @@ const countBy = (arr, keyFn) => {
 const pairs = (m) => Object.entries(m).map(([name, value]) => ({ name, value }))
 const sum = (arr, f) => arr.reduce((s, x) => s + (f(x) || 0), 0)
 
-// Range filter for string YYYY-MM-DD fields.
 const dateRange = (field, from, to) => {
   const f = {}
   if (from) f.$gte = from
@@ -195,10 +144,6 @@ const dateRange = (field, from, to) => {
   return Object.keys(f).length ? { [field]: f } : {}
 }
 
-// Extract a 'YYYY-MM' key from a Date or a 'YYYY-MM-DD'/ISO string. Returns
-// null when the input can't be resolved to a real date. This makes byMonth
-// robust to both the string date fields (e.g. Transaction.date) and Mongoose
-// Date timestamps (e.g. Deal.createdAt), which previously broke trend charts.
 const ymKey = (d) => {
   if (!d) return null
   const dt = d instanceof Date ? d : new Date(String(d).slice(0, 10))
@@ -206,7 +151,6 @@ const ymKey = (d) => {
   return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`
 }
 
-// Bucket docs by calendar month; valueFns maps output key -> (doc)=>number.
 const byMonth = (arr, dateFn, valueFns) => {
   const m = {}
   arr.forEach((x) => {
@@ -219,23 +163,23 @@ const byMonth = (arr, dateFn, valueFns) => {
   return Object.keys(m).map(Number).sort((a, b) => a - b).map((i) => m[i])
 }
 
-// Attendance weekly trend (weeks from day-of-month).
 const byWeek = (arr) => {
-  const m = {}
-  arr.forEach((x) => {
-    if (!x.date) return
-    const day = Number(x.date.slice(8, 10))
-    const w = Math.min(4, Math.floor((day - 1) / 7))
-    const b = (m[w] ||= { week: `Week ${w + 1}`, present: 0, absent: 0, late: 0 })
-    if (x.status === 'Present') b.present += 1
+  const weeks = [0, 1, 2, 3].map((i) => ({ week: `Week ${i + 1}`, present: 0, absent: 0, late: 0 }))
+  ;(arr || []).forEach((x) => {
+    if (!x?.date) return
+    const day = Number(String(x.date).slice(8, 10))
+    if (!Number.isFinite(day) || day < 1) return
+    const w = Math.min(3, Math.floor((day - 1) / 7))
+    const b = weeks[w]
+    if (!b) return
+    if (x.status === 'Present' || x.status === 'Early Exit') b.present += 1
+    else if (x.status === 'Late') { b.present += 1; b.late += 1 }
     else if (x.status === 'Absent' || x.status === 'On Leave') b.absent += 1
-    else if (x.status === 'Late') b.late += 1
   })
-  return Object.keys(m).map(Number).sort((a, b) => a - b).map((i) => ({ ...m[i], week: `Week ${i + 1}` }))
+  // Always return all 4 weeks so Week 2 / Week 4 never disappear when empty
+  return weeks
 }
 
-// Average working hours by weekday. Phase 7.2 (TASK 3): Overtime REMOVED —
-// the key stays as 0 so existing consumers of this report keep working.
 const byWeekday = (arr) => {
   const m = {}
   arr.forEach((x) => {
@@ -252,7 +196,6 @@ const byWeekday = (arr) => {
   })
 }
 
-/* ------------------------------- Employees ------------------------------- */
 const computeEmployees = async (query = {}) => {
   const { department } = query
   const filter = department && department !== 'all' ? { department } : {}
@@ -260,8 +203,6 @@ const computeEmployees = async (query = {}) => {
   const byDept = pairs(countBy(list, (e) => e.department))
   const byStatus = pairs(countBy(list, (e) => e.status))
   const genderSplit = pairs(countBy(list, (e) => e.gender || 'Other'))
-  // Real headcount growth: count hires (joiningDate, falling back to createdAt)
-  // bucketed into each of the last six calendar months. No synthetic values.
   const now = new Date()
   const growth = []
   for (let i = 5; i >= 0; i--) {
@@ -292,7 +233,6 @@ const computeEmployees = async (query = {}) => {
   }
 }
 
-/* ------------------------------- Attendance ------------------------------- */
 const computeAttendance = async (query = {}) => {
   const { from, to, department } = query
   const filter = { ...dateRange('date', from, to) }
@@ -303,8 +243,6 @@ const computeAttendance = async (query = {}) => {
   const earlyExit = rows.filter((r) => r.status === 'Early Exit').length
   const absent = rows.filter((r) => r.status === 'Absent').length
   const onLeave = rows.filter((r) => r.status === 'On Leave').length
-  // Phase 7.2 (TASK 3): Overtime REMOVED — the key stays as 0 so existing
-  // consumers of this report (AttendanceReports page) keep reading it.
   const totalOvertime = 0
   const avgHours = +(sum(rows, (r) => r.workingHours || 0) / (rows.length || 1)).toFixed(1)
 
@@ -326,7 +264,6 @@ const computeAttendance = async (query = {}) => {
     id: String(r._id), employee: r.employee, department: r.department, date: r.date,
     status: r.status, checkIn: r.checkIn, checkOut: r.checkOut,
     workingHours: r.workingHours,
-    // Phase 7.2 (TASK 3): Overtime REMOVED — the key stays as 0.
     overtimeHours: 0,
   }))
   return {
@@ -340,7 +277,6 @@ const computeAttendance = async (query = {}) => {
   }
 }
 
-/* -------------------------------- Leaves -------------------------------- */
 const computeLeaves = async (query = {}) => {
   const { from, to, department } = query
   const filter = { ...dateRange('from', from, to) }
@@ -372,7 +308,6 @@ const computeLeaves = async (query = {}) => {
   }
 }
 
-/* -------------------------------- Finance -------------------------------- */
 const computeFinance = async (query = {}) => {
   const { from, to } = query
   const txns = await Transaction.find(dateRange('date', from, to)).lean()
@@ -403,7 +338,6 @@ const computeFinance = async (query = {}) => {
   }
 }
 
-/* ------------------------------- Projects ------------------------------- */
 const computeProjects = async (query = {}) => {
   const { from, to } = query
   const projects = await Project.find(dateRange('startDate', from, to)).lean()
@@ -431,11 +365,7 @@ const computeProjects = async (query = {}) => {
   }
 }
 
-/* ------------------------------- Dashboard ------------------------------- */
 const computeDashboard = async (query = {}) => {
-  // Phase 5.5 (Tasks 8/9): CRM and Inventory removed. The remaining five
-  // reports are unchanged, so every other dashboard KPI keeps its exact
-  // previous value.
   const [emp, att, fin, proj, lv] = await Promise.all([
     computeEmployees(query), computeAttendance(query), computeFinance(query),
     computeProjects(query), computeLeaves(query),
@@ -458,7 +388,6 @@ const computeDashboard = async (query = {}) => {
   }
 }
 
-// --- HTTP handlers (all protected by `protect` in the router) ---
 const json = (fn) => async (req, res) => res.json(await fn(req.query))
 
 export const dashboardReport = json(computeDashboard)

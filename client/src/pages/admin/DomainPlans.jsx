@@ -12,7 +12,14 @@ export default function DomainPlans() {
     { key: 'name', header: 'Plan', render: (r) => <span className="font-medium">{r.name}</span> },
     { key: 'code', header: 'Code', render: (r) => (r.code ? <Badge tone="accent">{r.code}</Badge> : '—') },
     { key: 'price', header: 'Monthly Price', render: (r) => formatCurrency(r.price) },
-    { key: 'description', header: 'Description', render: (r) => r.description || '—' },
+    {
+      key: 'description',
+      header: 'Description',
+      className: 'max-w-[260px]',
+      render: (r) => (r.description
+        ? <span className="block max-w-[220px] truncate" title={r.description}>{r.description}</span>
+        : '—'),
+    },
     {
       key: 'status',
       header: 'Status',

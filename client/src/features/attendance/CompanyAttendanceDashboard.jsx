@@ -251,7 +251,7 @@ export function CompanyAttendanceDashboard() {
         <div className="space-y-4">
           {}
           <Card>
-            <CardHeader title="Attendance by Role" subtitle="Employees, HR and Managers" />
+            <CardHeader title="Attendance by Role" subtitle="Employees and Managers" />
             <div className="space-y-2">
               {(stats?.byRole || []).map((r) => (
                 <div key={r.name} className="rounded-xl border border-app p-3">

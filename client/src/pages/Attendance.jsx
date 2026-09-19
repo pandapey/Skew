@@ -74,8 +74,7 @@ export default function Attendance() {
           subtitle="Organization-wide attendance monitoring, summaries and reports."
           actions={(
             <div className="flex flex-wrap items-center gap-2">
-            <Button variant="ghost" icon={FiUserCheck} onClick={() => navigate('/attendance/leave')}>Leave</Button>
-              <Button variant="ghost" icon={FiBarChart2} onClick={() => navigate('/attendance/reports')}>Monthly Report</Button>
+              <Button variant="ghost" icon={FiUserCheck} onClick={() => navigate('/attendance/leave')}>Leave</Button>
             </div>
           )}
         />

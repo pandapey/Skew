@@ -2,13 +2,12 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useParams, useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
-import { FiArrowLeft, FiPlus, FiTrash2, FiSend, FiEdit2 } from 'react-icons/fi'
+import { FiArrowLeft, FiPlus, FiTrash2, FiSend, FiEdit2, FiArrowRight } from 'react-icons/fi'
 import { useAuth } from '@/hooks/useAuth'
 import { clientService } from '@/features/client/clientService'
 import { adminApi } from '@/api/adminApi'
 import { employeeApi } from '@/api/services'
 import { PageHeader, Card, CardHeader, Button, Badge, Input, Select, Textarea, Loader, EmptyState, Avatar, ConfirmDialog } from '@/components/ui'
-import { fmtDate } from '@/features/client/constants'
 import { ROLES } from '@/constants'
 
 const TABS = ['Overview', 'Projects', 'Team', 'Billing', 'Documents', 'Announcements', 'Messages', 'Danger']
@@ -36,7 +35,6 @@ export default function ClientDetail() {
 
   const mut = (fn, msg) => useMutation({ mutationFn: fn, onSuccess: () => { toast.success(msg); invalidate() }, onError: () => toast.error('Action failed') })
 
-  const assignProject = mut((pid) => clientService.assignProject(id, pid), 'Project assigned')
   const setManager = mut(({ pid, mgr }) => clientService.assignProjectManager(pid, mgr), 'Manager updated')
   const assignTeam = mut(({ pid, members }) => clientService.assignTeam(pid, members), 'Team updated')
   const genInvoice = mut(({ pid, inv }) => clientService.generateInvoice(pid, inv), 'Invoice generated')
@@ -60,7 +58,7 @@ export default function ClientDetail() {
   return (
     <div>
       <Button variant="ghost" icon={FiArrowLeft} onClick={() => navigate('/clients')} className="mb-3">Back to Clients</Button>
-      <PageHeader title={client.company} subtitle={`${client.contactPerson} · ${client.plan} · ${client.status}`}
+      <PageHeader title={client.company} subtitle={`${client.contactPerson} · ${client.status}`}
         actions={(
           <div className="flex items-center gap-2">
             <Badge tone={client.status === 'Active' ? 'success' : 'warning'}>{client.status}</Badge>
@@ -79,7 +77,7 @@ export default function ClientDetail() {
         <Card>
           <CardHeader title="Company Profile" />
           <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
-            {[['Contact', client.contactPerson], ['Designation', client.designation], ['Email', client.email], ['Phone', client.phone], ['GST', client.gst], ['Plan', client.plan], ['Joined', fmtDate(client.joinedDate)], ['Address', client.address], ['Website', client.website]].map(([k, v]) => (
+            {[['Contact', client.contactPerson], ['Email', client.email], ['Phone', client.phone], ['GST', client.gst], ['Address', client.address]].map(([k, v]) => (
               <div key={k}><p className="text-xs text-muted">{k}</p><p className="font-medium">{v || '—'}</p></div>
             ))}
           </div>
@@ -89,29 +87,49 @@ export default function ClientDetail() {
       {tab === 'Projects' && (
         <Card>
           <CardHeader title="Assigned Projects" />
-          {clientProjects.length === 0 ? <EmptyState title="No projects assigned" /> : clientProjects.map((p) => (
-            <div key={p.projectId} className="flex items-center justify-between rounded-xl border border-app p-3">
-              <div><p className="text-sm font-medium">{p.name}</p><p className="text-xs text-muted">{p.code} · {p.status}</p></div>
-              <Button variant="ghost" size="sm" icon={FiTrash2} onClick={() => assignProject.mutate(p.projectId)}>Unassign</Button>
+          {clientProjects.length === 0 ? <EmptyState title="No projects assigned" /> : (
+            <div className="space-y-2.5">
+              {clientProjects.map((p) => {
+                const target = `/projects/${p.code || p.projectId || p.id}`
+                return (
+                  <button
+                    key={p.projectId || p.id}
+                    type="button"
+                    onClick={() => navigate(target)}
+                    className="flex w-full items-center justify-between gap-3 rounded-xl border border-app p-3 text-left transition hover:border-primary/50 hover:bg-primary/[0.03]"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">{p.name}</p>
+                      <p className="text-xs text-muted">{p.code} · {p.status}</p>
+                    </div>
+                    <span className="flex flex-none items-center gap-1 text-xs font-medium text-primary">
+                      Open <FiArrowRight />
+                    </span>
+                  </button>
+                )
+              })}
             </div>
-          ))}
+          )}
         </Card>
       )}
 
       {tab === 'Team' && (
         <div className="space-y-4">
+          {clientProjects.length === 0 && <Card><EmptyState title="No projects assigned" description="Team members will appear here once projects are assigned." /></Card>}
           {clientProjects.map((p) => (
             <Card key={p.projectId}>
-              <CardHeader title={p.name} subtitle="Assign project manager & team" />
+              <CardHeader title={`Project: ${p.name}`} subtitle={`${p.code || ''} · ${p.status || ''} · ${(p.team || []).length} member(s) — Assign project manager & team`} />
               <div className="mb-3 flex flex-wrap items-center gap-2">
                 <span className="text-sm text-muted">Manager:</span>
                 <Select className="w-auto" value={p.projectManager || ''} onChange={(e) => setManager.mutate({ pid: p.projectId, mgr: e.target.value })}
                   options={[{ value: '', label: 'Select manager' }, ...employees.slice(0, 20).map((e) => ({ value: e.name, label: e.name }))]} />
               </div>
               <div className="space-y-2">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted">Team member list — {p.name}</p>
+                {!(p.team || []).length && <p className="rounded-xl border border-dashed border-app p-3 text-sm text-muted">No team members assigned to {p.name} yet.</p>}
                 {p.team?.map((m, i) => (
                   <div key={m.name + i} className="flex items-center justify-between rounded-xl border border-app p-2.5">
-                    <div className="flex items-center gap-2"><Avatar name={m.name} size={28} /><span className="text-sm">{m.name}</span><span className="text-xs text-muted">{m.roleInProject}</span></div>
+                    <div className="flex min-w-0 items-center gap-2"><Avatar name={m.name} size={28} /><span className="truncate text-sm font-medium">{m.name}</span><span className="text-xs text-muted">{m.roleInProject || m.position || 'Member'}</span></div>
                     <Button variant="ghost" size="sm" icon={FiTrash2} onClick={() => assignTeam.mutate({ pid: p.projectId, members: p.team.filter((_, j) => j !== i) })}>Remove</Button>
                   </div>
                 ))}

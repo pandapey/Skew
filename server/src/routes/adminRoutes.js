@@ -88,18 +88,19 @@ router.use('/system-logs', buildResourceRouter(systemLogs.service, { readGuard: 
 router.use('/activity', buildResourceRouter(activities.service, { readGuard: canAdmin, writeGuard: canAdmin }))
 
 const planRead = authorize('Admin', 'Manager')
+const planWrite = authorize('Admin', 'Manager')
 const plans = createResourceService(Plan, {
   searchFields: ['name', 'code', 'description'],
   filterFields: ['status'],
 })
 
-router.put('/plans/:id', protect, canAdmin, validatePlan, asyncHandler(async (req, res) => {
+router.put('/plans/:id', protect, planWrite, validatePlan, asyncHandler(async (req, res) => {
   res.json(await plans.service.update(req.params.id, req.body))
 }))
 
 router.use('/plans', buildResourceRouter(plans.service, {
   readGuard: planRead,
-  writeGuard: canAdmin,
+  writeGuard: planWrite,
   validate: validatePlan,
 }))
 
@@ -108,13 +109,13 @@ const domainPlans = createResourceService(DomainPlan, {
   filterFields: ['status'],
 })
 
-router.put('/domain-plans/:id', protect, canAdmin, validateDomainPlan, asyncHandler(async (req, res) => {
+router.put('/domain-plans/:id', protect, planWrite, validateDomainPlan, asyncHandler(async (req, res) => {
   res.json(await domainPlans.service.update(req.params.id, req.body))
 }))
 
 router.use('/domain-plans', buildResourceRouter(domainPlans.service, {
   readGuard: planRead,
-  writeGuard: canAdmin,
+  writeGuard: planWrite,
   validate: validateDomainPlan,
 }))
 

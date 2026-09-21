@@ -14,10 +14,8 @@ const columns = [
       <div className="min-w-0"><p className="truncate font-medium">{r.company}</p><p className="truncate text-xs text-muted">{r.contactPerson}</p></div>
     </div>
   ) },
-  { key: 'plan', header: 'Plan', render: (r) => <span className="chip bg-primary/10 text-primary">{r.plan}</span> },
   { key: 'projectCount', header: 'Projects', render: (r) => r.projectCount ?? 0 },
   { key: 'activeProjects', header: 'Active', render: (r) => r.activeProjects ?? 0 },
-  { key: 'status', header: 'Status', render: (r) => <span className={`chip ${r.status === 'Active' ? 'bg-success/12 text-success' : 'bg-warning/12 text-warning'}`}>{r.status}</span> },
   { key: '_manage', header: '', render: (r) => (
     <Link to={`/clients/${r.id}`} onClick={(e) => e.stopPropagation()} className="inline-flex items-center gap-1 rounded-lg bg-primary/10 px-2.5 py-1.5 text-xs font-medium text-primary transition hover:bg-primary/20">
       Manage <FiArrowRight />
@@ -28,12 +26,9 @@ const columns = [
 const exportColumns = [
   { header: 'Company', accessor: 'company' }, { header: 'Contact', accessor: 'contactPerson' },
   { header: 'Email', accessor: 'email' },
-  { header: 'Plan', accessor: 'plan' }, { header: 'Status', accessor: 'status' },
 ]
 
-const filters = [
-  { name: 'status', label: 'All Status', options: ['Active', 'On Hold', 'Suspended'] },
-]
+const filters = []
 
 export default function Clients() {
   const navigate = useNavigate()

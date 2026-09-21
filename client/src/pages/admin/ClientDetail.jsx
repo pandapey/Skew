@@ -53,7 +53,43 @@ export default function ClientDetail() {
   if (!client) return <EmptyState title="Client not found" />
 
   const visibleTabs = isAdmin ? TABS : TABS.filter((t) => !ADMIN_ONLY_TABS.includes(t))
-  const clientProjects = allProjects.filter((p) => p.clientId === id)
+  // Fix: /admin/projects returns Project docs ({_id, lead, members}) while the
+  // Team UI expected legacy ClientProject shape ({projectId, projectManager, team}).
+  // Normalize so already-added members + current manager always show.
+  const toTeamMember = (m) => {
+    if (!m) return null
+    if (typeof m === 'string') return { name: m, roleInProject: 'Member', position: 'Team Member', department: 'Skew Team', availability: 'Available' }
+    return {
+      name: m.name || '',
+      roleInProject: m.roleInProject || m.role || 'Member',
+      position: m.position || m.role || 'Team Member',
+      department: m.department || 'Skew Team',
+      availability: m.availability || 'Available',
+      avatar: m.avatar || '',
+    }
+  }
+  const clientProjects = allProjects
+    .filter((p) => p.clientId === id)
+    .map((p) => {
+      const projectId = p.projectId || p.id || (p._id ? String(p._id) : '')
+      const projectManager = p.projectManager || p.lead || ''
+      let team = Array.isArray(p.team) && p.team.length
+        ? p.team.map(toTeamMember).filter((m) => m && m.name)
+        : []
+      if (!team.length && Array.isArray(p.members) && p.members.length) {
+        const fromMembers = p.members.map((m) => toTeamMember(m)).filter((m) => m && m.name)
+        const leadEntry = projectManager ? [toTeamMember({ name: projectManager, roleInProject: 'Lead', position: 'Team Lead' })] : []
+        // Dedupe by name so lead isn't listed twice
+        const seen = new Set()
+        team = [...leadEntry, ...fromMembers].filter((m) => {
+          const k = String(m.name).trim().toLowerCase()
+          if (!k || seen.has(k)) return false
+          seen.add(k)
+          return true
+        })
+      }
+      return { ...p, projectId, projectManager, team }
+    })
 
   return (
     <div>
@@ -116,16 +152,32 @@ export default function ClientDetail() {
       {tab === 'Team' && (
         <div className="space-y-4">
           {clientProjects.length === 0 && <Card><EmptyState title="No projects assigned" description="Team members will appear here once projects are assigned." /></Card>}
-          {clientProjects.map((p) => (
-            <Card key={p.projectId}>
-              <CardHeader title={`Project: ${p.name}`} subtitle={`${p.code || ''} · ${p.status || ''} · ${(p.team || []).length} member(s) — Assign project manager & team`} />
+          {clientProjects.map((p) => {
+            const managerOpts = [
+              { value: '', label: p.projectManager ? `Current: ${p.projectManager}` : 'Select manager' },
+              ...employees
+                .filter((e) => !p.projectManager || e.name !== p.projectManager)
+                .slice(0, 50)
+                .map((e) => ({ value: e.name, label: e.name })),
+            ]
+            // Ensure current manager stays selectable even if outside the sliced list
+            if (p.projectManager && !managerOpts.some((o) => o.value === p.projectManager)) {
+              managerOpts.splice(1, 0, { value: p.projectManager, label: p.projectManager })
+            }
+            const availableToAdd = employees
+              .filter((e) => !(p.team || []).some((m) => String(m.name).trim().toLowerCase() === String(e.name).trim().toLowerCase()))
+              .slice(0, 50)
+            return (
+            <Card key={p.projectId || p.id || p._id}>
+              <CardHeader title={`Project: ${p.name}`} subtitle={`${p.code || ''} · ${p.status || ''} · ${(p.team || []).length} member(s)${p.projectManager ? ` · Manager: ${p.projectManager}` : ''}`} />
               <div className="mb-3 flex flex-wrap items-center gap-2">
                 <span className="text-sm text-muted">Manager:</span>
                 <Select className="w-auto" value={p.projectManager || ''} onChange={(e) => setManager.mutate({ pid: p.projectId, mgr: e.target.value })}
-                  options={[{ value: '', label: 'Select manager' }, ...employees.slice(0, 20).map((e) => ({ value: e.name, label: e.name }))]} />
+                  options={managerOpts} />
+                {p.projectManager && <Badge tone="primary">{p.projectManager}</Badge>}
               </div>
               <div className="space-y-2">
-                <p className="text-xs font-semibold uppercase tracking-wide text-muted">Team member list — {p.name}</p>
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted">Already added members — {p.name} ({(p.team || []).length})</p>
                 {!(p.team || []).length && <p className="rounded-xl border border-dashed border-app p-3 text-sm text-muted">No team members assigned to {p.name} yet.</p>}
                 {p.team?.map((m, i) => (
                   <div key={m.name + i} className="flex items-center justify-between rounded-xl border border-app p-2.5">
@@ -134,10 +186,11 @@ export default function ClientDetail() {
                   </div>
                 ))}
                 <Select className="w-full" value="" onChange={(e) => { if (e.target.value) assignTeam.mutate({ pid: p.projectId, members: [...(p.team || []), { name: e.target.value, roleInProject: 'Member', position: 'Team Member', department: 'Skew Team', availability: 'Available' }] }) }}
-                  options={[{ value: '', label: '+ Add team member' }, ...employees.filter((e) => !(p.team || []).some((m) => m.name === e.name)).slice(0, 30).map((e) => ({ value: e.name, label: e.name }))]} />
+                  options={[{ value: '', label: p.team?.length ? `+ Add more (${(p.team || []).length} already added)` : '+ Add team member' }, ...availableToAdd.map((e) => ({ value: e.name, label: e.name }))]} />
               </div>
             </Card>
-          ))}
+            )
+          })}
         </div>
       )}
 

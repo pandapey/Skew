@@ -1,20 +1,12 @@
-// Recurrence expansion engine.
-//
-// A recurring event is stored as a single "master" record carrying a
-// `recurrence` descriptor. At render time we expand it into the concrete
-// occurrences that fall inside the visible window so the grid can paint each
-// one. Occurrences are immutable copies that retain a `masterId` link so edits
-// and drag-and-drop always mutate the master record.
 import dayjs from 'dayjs'
 
-// Advance the cursor by one recurrence step.
 function step(cursor, rec) {
   const interval = Math.max(1, Number(rec.interval) || 1)
   switch (rec.freq) {
     case 'daily':
       return cursor.add(interval, 'day')
     case 'weekly':
-      return cursor.add(1, 'day') // step day-by-day, filter by weekday below
+      return cursor.add(1, 'day')
     case 'monthly':
       return cursor.add(interval, 'month')
     case 'yearly':
@@ -24,11 +16,13 @@ function step(cursor, rec) {
   }
 }
 
-// Expand a single event into every occurrence overlapping [rangeStart, rangeEnd].
 export function generateOccurrences(event, rangeStart, rangeEnd) {
   const rec = event.recurrence
   const isRecurring = rec && rec.freq && rec.freq !== 'none'
-  if (!isRecurring) return [{ ...event, masterId: event.id, isOccurrence: false }]
+  // Fix: API returns {_id} while UI uses {id}. Normalize so delete/update
+  // always targets the real CalendarEvent id instead of undefined.
+  const baseId = event.id || (event._id ? String(event._id) : undefined)
+  if (!isRecurring) return [{ ...event, id: baseId, masterId: baseId, isOccurrence: false }]
 
   const base = dayjs(event.start)
   const durationMs = Math.max(0, dayjs(event.end).valueOf() - base.valueOf())
@@ -38,7 +32,6 @@ export function generateOccurrences(event, rangeStart, rangeEnd) {
     ? rec.byWeekday.map(Number).filter((d) => d >= 0 && d <= 6)
     : []
 
-  // Daily/weekly series can begin at the window start without missing occurrences.
   let cursor = base.clone()
   if ((rec.freq === 'daily' || rec.freq === 'weekly') && cursor.isBefore(rangeStart)) {
     cursor = rangeStart.clone()
@@ -51,7 +44,7 @@ export function generateOccurrences(event, rangeStart, rangeEnd) {
     guard++
     const occStart = cursor.clone()
     let match = true
-    // Weekday restriction applies to both weekly and daily series.
+
     if ((rec.freq === 'weekly' || rec.freq === 'daily') && byWeekday.length) {
       match = byWeekday.includes(occStart.day())
     }
@@ -62,8 +55,8 @@ export function generateOccurrences(event, rangeStart, rangeEnd) {
       if (overlaps) {
         result.push({
           ...event,
-          id: `${event.id}__occ${made}`,
-          masterId: event.id,
+          id: `${baseId}__occ${made}`,
+          masterId: baseId,
           isOccurrence: true,
           occurrenceIndex: made,
           start: occStart.toISOString(),
@@ -81,21 +74,17 @@ export function generateOccurrences(event, rangeStart, rangeEnd) {
   return result
 }
 
-// Expand a whole collection of events for the visible window.
 export function expandEvents(events, rangeStart, rangeEnd) {
   const out = []
   for (const ev of events) out.push(...generateOccurrences(ev, rangeStart, rangeEnd))
   return out
 }
 
-// Convenience accessors.
 export const occStart = (o) => dayjs(o.start)
 export const occEnd = (o) => dayjs(o.end)
 export const isAllDay = (o) => Boolean(o.allDay)
 export const isMultiDay = (o) => occStart(o).startOf('day').isBefore(occEnd(o).startOf('day'))
 
-// Shift an occurrence (or master) to a new start, preserving its duration.
-// Returns a patch suitable for the service `update` call on the master id.
 export function shiftEvent(event, newStartDayjs) {
   const start = dayjs(event.start)
   const end = dayjs(event.end)

@@ -1,6 +1,3 @@
-// Post editor — create / edit with category, body, tags, pin, location and
-// media (images / videos / file attachments). Attachments may be gradient
-// placeholders (mock) or real uploaded files (held in `_file` for the backend).
 import { useEffect, useState } from 'react'
 import { FiX, FiImage, FiFilm, FiPaperclip, FiUpload } from 'react-icons/fi'
 import { Modal, Button, Input, Select, Textarea } from '@/components/ui'
@@ -13,7 +10,6 @@ const GRADIENTS = [
 ]
 
 let _att = 0
-const newAtt = (type) => ({ id: `att-${Date.now()}-${_att++}`, type, name: type === 'image' ? 'Image' : type === 'video' ? 'Video' : 'document.pdf', url: null, size: 0, color: GRADIENTS[_att % GRADIENTS.length] })
 
 export default function PostComposer({ open, onClose, post, currentUser, onSave, onDelete }) {
   const isEdit = Boolean(post)
@@ -52,10 +48,8 @@ export default function PostComposer({ open, onClose, post, currentUser, onSave,
       setLocation('')
       setAttachments([])
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, post])
 
-  const addPlaceholder = (t) => setAttachments((prev) => [...prev, newAtt(t)])
   const addFile = (e) => {
     const files = Array.from(e.target.files || [])
     const next = files.map((f) => {
@@ -81,12 +75,16 @@ export default function PostComposer({ open, onClose, post, currentUser, onSave,
       setError('Please enter a title.')
       return
     }
+    // Fix: author/authorRole are frozen to the logged-in user (or original post
+    // author when editing) — they cannot be typed over.
+    const frozenAuthor = post?.author || currentUser?.name || author || 'You'
+    const frozenRole = post?.authorRole || currentUser?.role || authorRole || 'Employee'
     const payload = {
       type,
       title: title.trim(),
       body: body.trim(),
-      author,
-      authorRole,
+      author: frozenAuthor,
+      authorRole: frozenRole,
       pinned,
       location: location.trim(),
       tags: tags.split(',').map((s) => s.trim()).filter(Boolean),
@@ -124,7 +122,7 @@ export default function PostComposer({ open, onClose, post, currentUser, onSave,
               <option key={t} value={t}>{POST_TYPES[t].singular}</option>
             ))}
           </Select>
-          <Input label="Author" value={author} onChange={(e) => setAuthor(e.target.value)} />
+          <Input label="Author" value={author} readOnly disabled placeholder="Auto-filled from login" />
         </div>
 
         <Input
@@ -145,7 +143,7 @@ export default function PostComposer({ open, onClose, post, currentUser, onSave,
         />
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Input label="Author role" value={authorRole} onChange={(e) => setAuthorRole(e.target.value)} placeholder="e.g. HR Lead" />
+          <Input label="Author role" value={authorRole} readOnly disabled placeholder="Auto-filled from login" />
           <Input label="Location (events)" value={location} onChange={(e) => setLocation(e.target.value)} placeholder="Townhall Hall" />
         </div>
 
@@ -156,19 +154,10 @@ export default function PostComposer({ open, onClose, post, currentUser, onSave,
           Pin this post
         </label>
 
-        {/* Media */}
+        {}
         <div>
-          <p className="label">Media &amp; Attachments</p>
+          <p className="label">Attachments</p>
           <div className="flex flex-wrap gap-2">
-            <button type="button" onClick={() => addPlaceholder('image')} className="btn-ghost px-3 py-1.5 text-sm">
-              <FiImage className="h-4 w-4" /> Image
-            </button>
-            <button type="button" onClick={() => addPlaceholder('video')} className="btn-ghost px-3 py-1.5 text-sm">
-              <FiFilm className="h-4 w-4" /> Video
-            </button>
-            <button type="button" onClick={() => addPlaceholder('file')} className="btn-ghost px-3 py-1.5 text-sm">
-              <FiPaperclip className="h-4 w-4" /> File
-            </button>
             <label className="btn-ghost cursor-pointer px-3 py-1.5 text-sm">
               <FiUpload className="h-4 w-4" /> Upload
               <input type="file" accept="image/*,video/*" multiple className="hidden" onChange={addFile} />

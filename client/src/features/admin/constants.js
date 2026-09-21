@@ -1,39 +1,60 @@
 import {
-  FiGrid, FiBriefcase, FiAward, FiUsers, FiUserPlus, FiCalendar,
-  FiFileText, FiCheckSquare, FiDollarSign, FiTrendingUp, FiRepeat, FiLogOut,
-  FiCreditCard, FiTag, FiGlobe,
+  FiHome, FiUsers, FiShield, FiDatabase, FiBarChart2,
 } from 'react-icons/fi'
+import { ALL_ROLES } from '@/constants'
 
-export const HR_SECTIONS = [
-  { key: 'departments', label: 'Departments', path: '/hr/departments', icon: FiBriefcase, tone: 'primary', desc: 'Org structure & budgets' },
-  { key: 'designations', label: 'Designations', path: '/hr/designations', icon: FiAward, tone: 'accent', desc: 'Roles, levels & grades' },
-  { key: 'plans', label: 'Plans', path: '/hr/plans', icon: FiTag, tone: 'success', desc: 'Client subscription plans' },
-  { key: 'domain-plans', label: 'Domain Plans', path: '/hr/domain-plans', icon: FiGlobe, tone: 'primary', desc: 'Domain creation plans' },
-  { key: 'recruitment', label: 'Recruitment', path: '/hr/recruitment', icon: FiUserPlus, tone: 'success', desc: 'Jobs, candidates & pipeline' },
-  { key: 'interviews', label: 'Interviews', path: '/hr/interviews', icon: FiCalendar, tone: 'warning', desc: 'Schedule & track rounds' },
-  { key: 'offers', label: 'Offer Letters', path: '/hr/offers', icon: FiFileText, tone: 'primary', desc: 'Generate & manage offers' },
-  { key: 'onboarding', label: 'Onboarding', path: '/hr/onboarding', icon: FiCheckSquare, tone: 'accent', desc: 'New-hire checklists' },
-  { key: 'payroll', label: 'Payroll', path: '/hr/payroll', icon: FiDollarSign, tone: 'success', desc: 'Salary slips & runs' },
-  { key: 'performance', label: 'Performance', path: '/hr/performance', icon: FiTrendingUp, tone: 'warning', desc: 'Reviews & appraisals' },
-  { key: 'movements', label: 'Transfers & Exits', path: '/hr/movements', icon: FiRepeat, tone: 'danger', desc: 'Promotion, transfer, exit' },
-  { key: 'reports', label: 'HR Reports', path: '/hr/reports', icon: FiGrid, tone: 'primary', desc: 'Analytics & exports' },
-  { key: 'finance', label: 'Finance', path: '/finance', icon: FiDollarSign, tone: 'primary', desc: 'Income, expenses, invoices & budgets' },
-  { key: 'client-billing', label: 'Client Pay/Balance', path: '/hr/client-billing', icon: FiCreditCard, tone: 'accent', desc: 'Client budgets, invoices & balances' },
+export const ADMIN_SECTIONS = [
+  { key: 'dashboard', label: 'Dashboard', path: '/admin', icon: FiHome, tone: 'primary', desc: 'Console overview', match: 'exact' },
+  { key: 'users', label: 'Users', path: '/admin/users', icon: FiUsers, tone: 'primary', desc: 'Accounts, roles & access' },
+  { key: 'roles', label: 'Roles', path: '/admin/roles', icon: FiShield, tone: 'accent', desc: 'Define org roles' },
+  { key: 'dbhealth', label: 'Database', path: '/admin/database-health', icon: FiDatabase, tone: 'primary', desc: 'MongoDB health & stats' },
+  { key: 'analytics', label: 'Analytics', path: '/admin/analytics', icon: FiBarChart2, tone: 'success', desc: 'Usage & trends' },
 ]
 
-export const HR_ADMIN_HIDDEN_MODULES = ['recruitment', 'interviews', 'offers', 'onboarding']
+export const ADMIN_WRITE_ROLES = ['Admin']
 
-export const DEPARTMENTS = ['Engineering', 'Sales', 'Human Resources', 'Finance', 'Marketing', 'Support', 'Operations']
-export const JOB_TYPES = ['Full-time', 'Contract', 'Intern', 'Consultant']
-export const JOB_STATUS = ['Open', 'On Hold', 'Closed']
-export const CANDIDATE_STAGES = ['Applied', 'Screening', 'Interview', 'Offer', 'Hired', 'Rejected']
-export const INTERVIEW_ROUNDS = ['Screening', 'Technical', 'Managerial', 'HR Round']
-export const INTERVIEW_MODES = ['Video Call', 'On-site', 'Phone']
-export const INTERVIEW_STATUS = ['Scheduled', 'Completed', 'Cancelled']
-export const OFFER_STATUS = ['Pending', 'Sent', 'Accepted', 'Declined']
-export const MOVEMENT_TYPES = ['Promotion', 'Transfer', 'Resignation', 'Exit']
-export const MOVEMENT_STATUS = ['Pending', 'Approved', 'Rejected']
-export const LEVELS = ['L1', 'L2', 'L3', 'L4', 'L5']
-export const GRADES = ['G1', 'G2', 'G3', 'G4', 'G5', 'G6']
+export const USER_STATUSES = ['Active', 'Inactive', 'Suspended', 'Pending', 'Blocked']
+export const USER_DEPARTMENTS = [
+  'Management', 'Engineering', 'Human Resources', 'Sales', 'Finance',
+  'Marketing', 'Design', 'Operations', 'Support', 'Legal',
+]
+export const API_ENVIRONMENTS = ['Production', 'Staging', 'Development']
+export const API_SCOPES = ['read', 'write', 'admin']
+export const PERMISSION_LEVELS = ['Full', 'View', 'Deny']
+export const LOG_SEVERITY = ['Info', 'Warning', 'Critical']
+export const SYS_LEVELS = ['INFO', 'WARN', 'ERROR', 'DEBUG']
+export const SYS_SOURCES = ['api-gateway', 'auth-service', 'db-connector', 'cron-scheduler']
+export const THEME_MODES = ['light', 'dark', 'system']
+export const DENSITY = ['Comfortable', 'Compact']
+export const SIDEBAR = ['Expanded', 'Collapsed', 'Icon Only']
+export const ENCRYPTION = ['None', 'SSL/TLS', 'STARTTLS']
+export const EMAIL_PROVIDERS = ['SMTP', 'SendGrid', 'SES', 'Mailgun']
+export const CURRENCIES = ['INR', 'USD', 'EUR', 'GBP', 'AED']
+export const FISCAL_YEARS = ['January', 'April', 'July', 'October']
 
-export const HR_WRITE_ROLES = ['Admin', 'Manager']
+export const ACCESS_LEVELS = ['Full', 'View', 'Deny']
+export const ADMIN_MODULES = [
+  'Dashboard', 'Employees', 'HR', 'Attendance', 'Leave',
+  'Projects', 'Finance', 'Announcements',
+  'Calendar', 'Notifications', 'Reports', 'Admin',
+]
+export const ROLE_DESCRIPTIONS = {
+  Admin: 'Unrestricted access to every module and setting (highest authority).',
+  Manager: 'Owns people, recruitment, payroll, performance, finance, team, projects and approvals.',
+  Employee: 'Standard self-service access to personal tools.',
+  Client: 'Limited portal access to their own projects & invoices.',
+}
+
+export const buildDefaultPermissions = () =>
+  Object.fromEntries(
+    ALL_ROLES.map((role) => [
+      role,
+      Object.fromEntries(
+        ADMIN_MODULES.map((mod) => {
+          if (role === 'Admin') return [mod, 'Full']
+          if (role === 'Manager') return [mod, ['Dashboard', 'Projects', 'Employees', 'HR', 'Attendance', 'Leave', 'Reports', 'Calendar', 'Finance'].includes(mod) ? 'Full' : 'View']
+          return [mod, ['Dashboard', 'Calendar', 'Notifications', 'Announcements', 'Leave', 'Attendance'].includes(mod) ? 'View' : 'Deny']
+        })
+      ),
+    ])
+  )

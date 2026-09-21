@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useViewState } from '@/hooks/useViewState'
 import { useQuery } from '@tanstack/react-query'
 import {
@@ -10,7 +10,8 @@ import {
 } from '@/components/ui'
 import { RevenueChart, BarsChart, DonutChart } from '@/components/charts/Charts'
 import { reportService } from '@/features/reports/reportService'
-import { DEPARTMENTS } from '@/features/reports/aggregate'
+import { DEPARTMENTS as FALLBACK_DEPARTMENTS } from '@/features/reports/aggregate'
+import { hrApi } from '@/api/services'
 import { exportToExcel, exportToPdf } from '@/utils/export'
 import { formatCurrency, cn } from '@/utils'
 import toast from 'react-hot-toast'
@@ -210,10 +211,22 @@ export default function Reports() {
     queryFn: () => reportService[tab]({ from, to, department }),
   })
 
-  const filterOpts = [
-    { value: 'all', label: 'All Departments' },
-    ...DEPARTMENTS.map((d) => ({ value: d, label: d })),
-  ]
+  // Fix: department filter must show departments added in HR > Departments,
+  // not the hardcoded list. Fall back to hardcoded while loading/empty.
+  const { data: hrDepts = [] } = useQuery({
+    queryKey: ['hr-departments'],
+    queryFn: () => hrApi.departments.all(),
+    staleTime: 60_000,
+  })
+  const filterOpts = useMemo(() => {
+    const rows = Array.isArray(hrDepts) ? hrDepts : []
+    const names = rows.map((d) => d?.name).filter(Boolean)
+    const list = names.length ? names : FALLBACK_DEPARTMENTS
+    return [
+      { value: 'all', label: 'All Departments' },
+      ...list.map((d) => ({ value: d, label: d })),
+    ]
+  }, [hrDepts])
 
   const clearFilters = () => { setFrom(''); setTo(''); setDepartment('all') }
   const hasFilters = !!(from || to || department !== 'all')
@@ -242,7 +255,7 @@ export default function Reports() {
         }
       />
 
-      {/* Tabs */}
+      {}
       <div className="mb-4 flex gap-1.5 overflow-x-auto pb-1">
         {TABS.map((t) => {
           const Icon = t.icon
@@ -257,7 +270,7 @@ export default function Reports() {
         })}
       </div>
 
-      {/* Filters */}
+      {}
       <Card className="mb-4">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
           <div className="flex flex-wrap items-end gap-3">
@@ -283,7 +296,6 @@ export default function Reports() {
   )
 }
 
-/* --------------------------- Dashboard --------------------------- */
 function DashboardView({ data }) {
   const { kpis, charts } = data
   return (
@@ -305,7 +317,6 @@ function DashboardView({ data }) {
   )
 }
 
-/* --------------------------- Domain tab --------------------------- */
 function TabView({ cfg, data }) {
   return (
     <div className="space-y-4">
@@ -331,7 +342,6 @@ function TabView({ cfg, data }) {
   )
 }
 
-/* --------------------------- Shared bits --------------------------- */
 function ChartCard({ title, subtitle, children, className = '' }) {
   return (
     <Card className={className}>

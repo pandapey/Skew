@@ -1,11 +1,27 @@
+import { useMemo } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { FiX } from 'react-icons/fi'
 import { SearchInput, Select } from '@/components/ui'
+import { hrApi } from '@/api/services'
 import { DEPARTMENTS, EMPLOYEE_STATUS, SORT_OPTIONS } from './constants'
 
-// Advanced filter + sort toolbar for the employee list.
 export function EmployeeFilters({ filters, onChange, onReset }) {
   const set = (patch) => onChange({ ...filters, ...patch, page: 1 })
   const active = filters.department || filters.status || filters.search
+
+  // Fix: department filter must reflect departments added in HR > Departments,
+  // not the hardcoded DEPARTMENTS list. Fall back to hardcoded when API is empty.
+  const { data: deptData = [] } = useQuery({
+    queryKey: ['hr-departments'],
+    queryFn: () => hrApi.departments.all(),
+    staleTime: 60_000,
+  })
+  const departmentOptions = useMemo(() => {
+    const rows = Array.isArray(deptData) ? deptData : []
+    const names = rows.map((d) => d?.name).filter(Boolean)
+    const list = names.length ? names : DEPARTMENTS
+    return [{ value: '', label: 'All Departments' }, ...list.map((d) => ({ value: d, label: d }))]
+  }, [deptData])
 
   return (
     <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center">
@@ -19,7 +35,7 @@ export function EmployeeFilters({ filters, onChange, onReset }) {
         value={filters.department}
         onChange={(e) => set({ department: e.target.value })}
         className="lg:w-52"
-        options={[{ value: '', label: 'All Departments' }, ...DEPARTMENTS.map((d) => ({ value: d, label: d }))]}
+        options={departmentOptions}
       />
       <Select
         value={filters.status}

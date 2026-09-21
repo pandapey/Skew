@@ -457,9 +457,28 @@ export const attendanceService = {
       const b = monthlyTrend[bucketOf(day)]
       if (!b) return
       if (r.status === 'Present' || r.status === 'Early Exit') b.present += 1
-      else if (r.status === 'Late') b.late += 1
+      else if (r.status === 'Late') { b.present += 1; b.late += 1 }
       else if (r.status === 'Absent' || r.status === 'On Leave') b.absent += 1
     })
+    // Fix: absent days never create records, so weekly trend showed only present.
+    // Backfill expected working slots (headcount x elapsed working days) as absent.
+    try {
+      const ranges = [[1, 7], [8, 14], [15, 21], [22, lastDay]]
+      ranges.forEach(([fromD, toD], idx) => {
+        let workingDays = 0
+        for (let d = fromD; d <= toD; d += 1) {
+          const key = `${monthPrefix}-${pad(d)}`
+          if (key > date) continue // don't expect attendance for future dates
+          const dt = new Date(mYear, mMonth - 1, d)
+          if (dt.getDay() === 0) continue // Sundays off
+          workingDays += 1
+        }
+        const expected = headcount * workingDays
+        const b = monthlyTrend[idx]
+        if (!b) return
+        b.absent = Math.max(b.absent, Math.max(0, expected - b.present))
+      })
+    } catch {}
 
     const endD = new Date(`${date}T00:00:00`)
     const hoursTrend = []

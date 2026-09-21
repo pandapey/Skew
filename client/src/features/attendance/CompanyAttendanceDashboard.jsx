@@ -6,7 +6,7 @@ import {
   FiUsers, FiUserCheck, FiUserX, FiAlertCircle, FiCalendar, FiBarChart2,
   FiLayers, FiGift, FiArrowRight,
 } from 'react-icons/fi'
-import { attendanceApi } from '@/api/services'
+import { attendanceApi, hrApi } from '@/api/services'
 import {
   Card, CardHeader, StatCard, DataTable, Badge, Pagination, SearchInput, Select, ProgressBar,
 } from '@/components/ui'
@@ -81,6 +81,15 @@ export function CompanyAttendanceDashboard() {
     queryFn: attendanceApi.holidays.all,
   })
 
+  // Fix: department filter must list all HR departments (like All Status lists all
+  // statuses) instead of only departments with records today (which showed a single
+  // item and forced scrolling). Falls back to stats-derived list while loading.
+  const { data: hrDepts = [] } = useQuery({
+    queryKey: ['hr-departments'],
+    queryFn: () => hrApi.departments.all(),
+    staleTime: 60_000,
+  })
+
   const rows = data?.data ?? []
 
   const selectStatus = (status) => setParams((p) => ({ ...p, status, page: 1 }))
@@ -96,13 +105,23 @@ export function CompanyAttendanceDashboard() {
           ? "Today's Employees On Leave"
           : isToday ? "Today's Attendance — All Employees" : `Attendance — All Employees (${formatDate(params.date)})`
 
-  const departmentOptions = useMemo(() => ([
-    { value: '', label: 'All Departments' },
-    ...(stats?.byDepartment || [])
-      .map((d) => d.name)
-      .filter(Boolean)
-      .map((name) => ({ value: name, label: name })),
-  ]), [stats])
+  const departmentOptions = useMemo(() => {
+    const rows = Array.isArray(hrDepts) ? hrDepts : []
+    const names = rows.map((d) => d?.name).filter(Boolean)
+    if (names.length) {
+      return [
+        { value: '', label: 'All Departments' },
+        ...names.map((name) => ({ value: name, label: name })),
+      ]
+    }
+    return [
+      { value: '', label: 'All Departments' },
+      ...(stats?.byDepartment || [])
+        .map((d) => d.name)
+        .filter(Boolean)
+        .map((name) => ({ value: name, label: name })),
+    ]
+  }, [hrDepts, stats])
 
   const upcomingHolidays = useMemo(() => {
     const list = Array.isArray(holidays) ? holidays : (holidays?.data ?? [])

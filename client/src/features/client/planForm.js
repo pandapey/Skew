@@ -1,56 +1,60 @@
-import { z } from 'zod'
-import { useQuery } from '@tanstack/react-query'
-import { adminApi } from '@/api/adminApi'
-import { ROLES } from '@/constants'
+import {
+  FiHome, FiUsers, FiShield, FiDatabase, FiBarChart2,
+} from 'react-icons/fi'
+import { ALL_ROLES } from '@/constants'
 
-export const PLAN_WRITE_ROLES = [ROLES.ADMIN]
-
-export const PLAN_QUERY_KEY = 'admin-plans'
-
-export const PLAN_STATUSES = ['Active', 'Inactive']
-
-export const planSchema = z.object({
-  name: z.string().min(2, 'Plan name required'),
-  code: z.string().optional(),
-  description: z.string().optional(),
-  price: z.coerce.number().min(0, 'Price cannot be negative').optional(),
-  status: z.string().optional(),
-})
-
-export const PLAN_FORM_FIELDS = [
-  { name: 'name', label: 'Plan Name', placeholder: 'Premium' },
-  { name: 'code', label: 'Code', placeholder: 'PREM' },
-  { name: 'price', label: 'Monthly Price (₹)', type: 'number', placeholder: '0' },
-  {
-    name: 'status',
-    label: 'Status',
-    type: 'select',
-    options: PLAN_STATUSES.map((s) => ({ value: s, label: s })),
-  },
-  { name: 'description', label: 'Description', type: 'textarea', full: true },
+export const ADMIN_SECTIONS = [
+  { key: 'dashboard', label: 'Dashboard', path: '/admin', icon: FiHome, tone: 'primary', desc: 'Console overview', match: 'exact' },
+  { key: 'users', label: 'Users', path: '/admin/users', icon: FiUsers, tone: 'primary', desc: 'Accounts, roles & access' },
+  { key: 'roles', label: 'Roles', path: '/admin/roles', icon: FiShield, tone: 'accent', desc: 'Define org roles' },
+  { key: 'dbhealth', label: 'Database', path: '/admin/database-health', icon: FiDatabase, tone: 'primary', desc: 'MongoDB health & stats' },
+  { key: 'analytics', label: 'Analytics', path: '/admin/analytics', icon: FiBarChart2, tone: 'success', desc: 'Usage & trends' },
 ]
 
-export const PLAN_FORM_DEFAULTS = {
-  name: '', code: '', description: '', price: 0, status: 'Active',
+export const ADMIN_WRITE_ROLES = ['Admin']
+
+export const USER_STATUSES = ['Active', 'Inactive', 'Suspended', 'Pending', 'Blocked']
+export const USER_DEPARTMENTS = [
+  'Management', 'Engineering', 'Human Resources', 'Sales', 'Finance',
+  'Marketing', 'Design', 'Operations', 'Support', 'Legal',
+]
+export const API_ENVIRONMENTS = ['Production', 'Staging', 'Development']
+export const API_SCOPES = ['read', 'write', 'admin']
+export const PERMISSION_LEVELS = ['Full', 'View', 'Deny']
+export const LOG_SEVERITY = ['Info', 'Warning', 'Critical']
+export const SYS_LEVELS = ['INFO', 'WARN', 'ERROR', 'DEBUG']
+export const SYS_SOURCES = ['api-gateway', 'auth-service', 'db-connector', 'cron-scheduler']
+export const THEME_MODES = ['light', 'dark', 'system']
+export const DENSITY = ['Comfortable', 'Compact']
+export const SIDEBAR = ['Expanded', 'Collapsed', 'Icon Only']
+export const ENCRYPTION = ['None', 'SSL/TLS', 'STARTTLS']
+export const EMAIL_PROVIDERS = ['SMTP', 'SendGrid', 'SES', 'Mailgun']
+export const CURRENCIES = ['INR', 'USD', 'EUR', 'GBP', 'AED']
+export const FISCAL_YEARS = ['January', 'April', 'July', 'October']
+
+export const ACCESS_LEVELS = ['Full', 'View', 'Deny']
+export const ADMIN_MODULES = [
+  'Dashboard', 'Employees', 'HR', 'Attendance', 'Leave',
+  'Projects', 'Finance', 'Announcements',
+  'Calendar', 'Notifications', 'Reports', 'Admin',
+]
+export const ROLE_DESCRIPTIONS = {
+  Admin: 'Unrestricted access to every module and setting (highest authority).',
+  Manager: 'Owns people, recruitment, payroll, performance, finance, team, projects and approvals.',
+  Employee: 'Standard self-service access to personal tools.',
+  Client: 'Limited portal access to their own projects & invoices.',
 }
 
-export function usePlanOptions(currentValue, { enabled = true } = {}) {
-  const { data = [], isLoading } = useQuery({
-    queryKey: [PLAN_QUERY_KEY, 'options'],
-    queryFn: () => adminApi.plans.all(),
-    staleTime: 60_000,
-    enabled,
-    select: (res) => (Array.isArray(res) ? res : res?.data || []),
-  })
-
-  const options = data
-    .filter((p) => p && p.name && (!p.status || p.status === 'Active'))
-    .map((p) => ({ value: p.name, label: p.name }))
-
-  const current = String(currentValue || '').trim()
-  if (current && !options.some((o) => o.value === current)) {
-    options.unshift({ value: current, label: `${current} (no longer offered)` })
-  }
-
-  return { options, loading: isLoading }
-}
+export const buildDefaultPermissions = () =>
+  Object.fromEntries(
+    ALL_ROLES.map((role) => [
+      role,
+      Object.fromEntries(
+        ADMIN_MODULES.map((mod) => {
+          if (role === 'Admin') return [mod, 'Full']
+          if (role === 'Manager') return [mod, ['Dashboard', 'Projects', 'Employees', 'HR', 'Attendance', 'Leave', 'Reports', 'Calendar', 'Finance'].includes(mod) ? 'Full' : 'View']
+          return [mod, ['Dashboard', 'Calendar', 'Notifications', 'Announcements', 'Leave', 'Attendance'].includes(mod) ? 'View' : 'Deny']
+        })
+      ),
+    ])
+  )

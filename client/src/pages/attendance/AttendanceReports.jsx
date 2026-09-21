@@ -1,9 +1,9 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
   FiUsers, FiUserCheck, FiUserX, FiAlertCircle, FiTrendingUp,
 } from 'react-icons/fi'
-import { attendanceApi } from '@/api/services'
+import { attendanceApi, hrApi } from '@/api/services'
 import {
   PageHeader, Card, CardHeader, StatCard, DataTable, Pagination, SearchInput,
   Select, Badge, Loader, EmptyState,
@@ -11,7 +11,7 @@ import {
 import { ExportMenu } from '@/components/ExportMenu'
 import { BarsChart, DonutChart } from '@/components/charts/Charts'
 import { useDebounce } from '@/hooks/useDebounce'
-import { DEPARTMENTS } from '@/features/hr/constants'
+import { DEPARTMENTS as FALLBACK_DEPARTMENTS } from '@/features/hr/constants'
 import { ATTENDANCE_STATUS, STATUS_TONE } from '@/features/attendance/constants'
 import { formatDate } from '@/utils'
 
@@ -27,6 +27,18 @@ export default function AttendanceReports() {
     queryKey: ['attendance-day', { ...params, search: debounced }],
     queryFn: () => attendanceApi.dayRecords({ ...params, search: debounced }),
   })
+  // Fix: show HR departments (what you added in Departments), not hardcoded list.
+  const { data: hrDepts = [] } = useQuery({
+    queryKey: ['hr-departments'],
+    queryFn: () => hrApi.departments.all(),
+    staleTime: 60_000,
+  })
+  const deptOptions = useMemo(() => {
+    const rows = Array.isArray(hrDepts) ? hrDepts : []
+    const names = rows.map((d) => d?.name).filter(Boolean)
+    const list = names.length ? names : FALLBACK_DEPARTMENTS
+    return [{ value: '', label: 'All Departments' }, ...list.map((d) => ({ value: d, label: d }))]
+  }, [hrDepts])
   const rows = data?.data ?? []
   const setParam = (patch) => setParams((p) => ({ ...p, ...patch, page: 1 }))
 
@@ -114,7 +126,7 @@ export default function AttendanceReports() {
           <div className="flex flex-1 flex-col gap-2 sm:flex-row lg:justify-end">
             <SearchInput value={params.search} onChange={(v) => setParam({ search: v })} className="sm:max-w-xs" />
             <Select className="sm:w-44" value={params.department} onChange={(e) => setParam({ department: e.target.value })}
-              options={[{ value: '', label: 'All Departments' }, ...DEPARTMENTS.map((d) => ({ value: d, label: d }))]} />
+              options={deptOptions} />
             <Select className="sm:w-40" value={params.status} onChange={(e) => setParam({ status: e.target.value })}
               options={[{ value: '', label: 'All Status' }, ...ATTENDANCE_STATUS.map((s) => ({ value: s, label: s }))]} />
             <ExportMenu rows={rows} filename="attendance-day-report" title="Daily Attendance Report" subtitle={todayLabel}

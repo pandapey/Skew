@@ -28,7 +28,7 @@ export default function AdminHub() {
 
   return (
     <div>
-      <PageHeader title="Admin Console" subtitle="Users, roles, plans, security, system health and platform configuration." />
+      <PageHeader title="Admin Console" subtitle="Users, roles, security, system health and platform configuration. Plans now live under HR." />
 
       {}
       <div className="mb-4 grid grid-cols-2 gap-4 lg:grid-cols-2">

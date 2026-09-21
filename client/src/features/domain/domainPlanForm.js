@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { adminApi } from '@/api/adminApi'
 import { ROLES } from '@/constants'
 
-export const DOMAIN_PLAN_WRITE_ROLES = [ROLES.ADMIN]
+export const DOMAIN_PLAN_WRITE_ROLES = [ROLES.ADMIN, ROLES.MANAGER]
 
 export const DOMAIN_PLAN_QUERY_KEY = 'admin-domain-plans'
 

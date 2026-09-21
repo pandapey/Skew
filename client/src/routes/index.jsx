@@ -26,6 +26,8 @@ const HrPerformance = lazy(() => import('@/pages/hr/Performance'))
 const HrMovements = lazy(() => import('@/pages/hr/Movements'))
 const HrReports = lazy(() => import('@/pages/hr/HrReports'))
 const HrClientBilling = lazy(() => import('@/pages/hr/ClientBilling'))
+const HrPlans = lazy(() => import('@/pages/admin/Plans'))
+const HrDomainPlans = lazy(() => import('@/pages/admin/DomainPlans'))
 const Attendance = lazy(() => import('@/pages/Attendance'))
 const AttendanceReports = lazy(() => import('@/pages/attendance/AttendanceReports'))
 const AttendanceShifts = lazy(() => import('@/pages/attendance/Shifts'))
@@ -160,6 +162,8 @@ export const router = createBrowserRouter([
       route('/hr/movements', HrMovements, [ROLES.ADMIN, ROLES.MANAGER]),
       route('/hr/reports', HrReports, [ROLES.ADMIN, ROLES.MANAGER]),
       route('/hr/client-billing', HrClientBilling, [ROLES.ADMIN, ROLES.MANAGER]),
+      route('/hr/plans', HrPlans, [ROLES.ADMIN, ROLES.MANAGER]),
+      route('/hr/domain-plans', HrDomainPlans, [ROLES.ADMIN, ROLES.MANAGER]),
       route('/clients', ClientsModule, [ROLES.ADMIN, ROLES.MANAGER]),
       route('/clients/new', ClientForm, [ROLES.ADMIN, ROLES.MANAGER]),
       route('/clients/:id/edit', ClientForm, [ROLES.ADMIN, ROLES.MANAGER]),

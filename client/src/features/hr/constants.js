@@ -1,12 +1,14 @@
 import {
   FiGrid, FiBriefcase, FiAward, FiUsers, FiUserPlus, FiCalendar,
   FiFileText, FiCheckSquare, FiDollarSign, FiTrendingUp, FiRepeat, FiLogOut,
-  FiCreditCard,
+  FiCreditCard, FiTag, FiGlobe,
 } from 'react-icons/fi'
 
 export const HR_SECTIONS = [
   { key: 'departments', label: 'Departments', path: '/hr/departments', icon: FiBriefcase, tone: 'primary', desc: 'Org structure & budgets' },
   { key: 'designations', label: 'Designations', path: '/hr/designations', icon: FiAward, tone: 'accent', desc: 'Roles, levels & grades' },
+  { key: 'plans', label: 'Plans', path: '/hr/plans', icon: FiTag, tone: 'success', desc: 'Client subscription plans' },
+  { key: 'domain-plans', label: 'Domain Plans', path: '/hr/domain-plans', icon: FiGlobe, tone: 'primary', desc: 'Domain creation plans' },
   { key: 'recruitment', label: 'Recruitment', path: '/hr/recruitment', icon: FiUserPlus, tone: 'success', desc: 'Jobs, candidates & pipeline' },
   { key: 'interviews', label: 'Interviews', path: '/hr/interviews', icon: FiCalendar, tone: 'warning', desc: 'Schedule & track rounds' },
   { key: 'offers', label: 'Offer Letters', path: '/hr/offers', icon: FiFileText, tone: 'primary', desc: 'Generate & manage offers' },

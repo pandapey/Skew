@@ -140,7 +140,7 @@ export default function ClassicDashboard() {
             <CardSkeleton />
           ) : (
             <BarsChart
-              data={data.attendance}
+              data={data?.attendance || []}
               xKey="day"
               bars={[
                 { key: 'present', color: '#10B981' },

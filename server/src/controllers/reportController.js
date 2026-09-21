@@ -163,7 +163,7 @@ const byMonth = (arr, dateFn, valueFns) => {
   return Object.keys(m).map(Number).sort((a, b) => a - b).map((i) => m[i])
 }
 
-const byWeek = (arr) => {
+const byWeek = (arr, opts = {}) => {
   const weeks = [0, 1, 2, 3].map((i) => ({ week: `Week ${i + 1}`, present: 0, absent: 0, late: 0 }))
   ;(arr || []).forEach((x) => {
     if (!x?.date) return
@@ -176,6 +176,36 @@ const byWeek = (arr) => {
     else if (x.status === 'Late') { b.present += 1; b.late += 1 }
     else if (x.status === 'Absent' || x.status === 'On Leave') b.absent += 1
   })
+  // Fix: Absent days never create Attendance records, so explicit absent counts
+  // are almost always 0 and the Weekly Attendance widget showed only Present.
+  // Backfill unrecorded elapsed working days as absent using headcount.
+  try {
+    const headcount = Number(opts.headcount) || 0
+    if (headcount > 0 && opts.year && opts.month) {
+      const year = Number(opts.year)
+      const month = Number(opts.month) // 1-12
+      const lastDay = new Date(year, month, 0).getDate()
+      const todayKey = opts.todayKey || new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
+      const holidaySet = opts.holidays instanceof Set ? opts.holidays : new Set()
+      const ranges = [[1, 7], [8, 14], [15, 21], [22, lastDay]]
+      ranges.forEach(([fromD, toD], idx) => {
+        let workingDays = 0
+        for (let d = fromD; d <= toD; d += 1) {
+          const key = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+          if (key > todayKey) continue // future days have no expected attendance yet
+          const dt = new Date(year, month - 1, d)
+          if (dt.getDay() === 0) continue // Sundays are company holidays
+          if (holidaySet.has(key)) continue
+          workingDays += 1
+        }
+        const expected = headcount * workingDays
+        const b = weeks[idx]
+        if (!b) return
+        const backfilled = Math.max(0, expected - b.present)
+        b.absent = Math.max(b.absent, backfilled)
+      })
+    }
+  } catch {}
   // Always return all 4 weeks so Week 2 / Week 4 never disappear when empty
   return weeks
 }
@@ -237,7 +267,10 @@ const computeAttendance = async (query = {}) => {
   const { from, to, department } = query
   const filter = { ...dateRange('date', from, to) }
   if (department && department !== 'all') filter.department = department
-  const rows = await Attendance.find(filter).lean()
+  const [rows, empList] = await Promise.all([
+    Attendance.find(filter).lean(),
+    Employee.find(department && department !== 'all' ? { department } : {}).select('_id').lean(),
+  ])
   const present = rows.filter((r) => r.status === 'Present').length
   const late = rows.filter((r) => r.status === 'Late').length
   const earlyExit = rows.filter((r) => r.status === 'Early Exit').length
@@ -266,13 +299,29 @@ const computeAttendance = async (query = {}) => {
     workingHours: r.workingHours,
     overtimeHours: 0,
   }))
+  // Weekly trend needs headcount + month context so absent can be backfilled
+  // (absent days never create records). Derive month from `from` or fall back to now.
+  let wkYear = new Date().getFullYear()
+  let wkMonth = new Date().getMonth() + 1
+  try {
+    const src = String(from || to || '').slice(0, 7)
+    const m = /^(\d{4})-(\d{2})$/.exec(src)
+    if (m) { wkYear = Number(m[1]); wkMonth = Number(m[2]) }
+  } catch {}
+  const monthlyTrend = byWeek(rows, {
+    headcount: empList.length,
+    year: wkYear,
+    month: wkMonth,
+    holidays: new Set(),
+    todayKey: new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }),
+  })
   return {
     kpis: {
       present, late, absent, onLeave,
       attendanceRate: rows.length ? Math.round(((present + late + earlyExit) / rows.length) * 100) : 0,
       avgHours, totalOvertime,
     },
-    charts: { statusSplit, byDepartment: Object.values(deptMap), monthlyTrend: byWeek(rows), hoursTrend: byWeekday(rows) },
+    charts: { statusSplit, byDepartment: Object.values(deptMap), monthlyTrend, hoursTrend: byWeekday(rows) },
     table,
   }
 }

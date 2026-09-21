@@ -1,6 +1,3 @@
-// Event editor — create / edit / delete with type, all-day, attendees,
-// description and recurrence. Recurrence is captured as a descriptor on the
-// master record (expanded later by recurrence.js).
 import { useEffect, useState } from 'react'
 import dayjs from 'dayjs'
 import { FiTrash2, FiRepeat, FiCheckCircle, FiXCircle } from 'react-icons/fi'
@@ -8,7 +5,7 @@ import { Modal, Button, Input, Select, Textarea, Badge } from '@/components/ui'
 import { cn } from '@/utils'
 import { TYPE_META, MEETING_STATUS_META, RECURRENCE_FREQ, WEEKDAY_LABELS } from './constants'
 
-const WEEKDAY_VALUES = [1, 2, 3, 4, 5, 6, 0] // Mon..Sun in dayjs numbering
+const WEEKDAY_VALUES = [1, 2, 3, 4, 5, 6, 0]
 
 function toDateStr(d) {
   return dayjs(d).format('YYYY-MM-DD')
@@ -35,7 +32,6 @@ export default function EventModal({ open, onClose, event, defaultStart, onSave,
   const [done, setDone] = useState(false)
   const [error, setError] = useState('')
 
-  // Hydrate form whenever the modal opens.
   useEffect(() => {
     if (!open) return
     setError('')
@@ -58,11 +54,14 @@ export default function EventModal({ open, onClose, event, defaultStart, onSave,
     setFreq(rec.freq || 'none')
     setByWeekday(rec.byWeekday?.map(Number) || [])
     setUntil(rec.until ? toDateStr(rec.until) : '')
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+
   }, [open, event])
 
   const toggleWeekday = (d) =>
     setByWeekday((prev) => (prev.includes(d) ? prev.filter((x) => x !== d) : [...prev, d]))
+
+  const rawId = event?.masterId || event?.id || event?._id || null
+  const baseId = rawId ? String(rawId).split('__occ')[0] : null
 
   const handleSave = () => {
     if (readOnly) return
@@ -103,18 +102,20 @@ export default function EventModal({ open, onClose, event, defaultStart, onSave,
     }
     if (type === 'task') payload.done = done
 
-    const masterId = event?.masterId || event?.id || null
+    const masterId = baseId
     onSave(masterId, payload)
   }
 
   const meta = TYPE_META[type] || TYPE_META.event
-
-  // Phase 6.9 (Task 17): client meeting requests carry a Pending/Approved/
-  // Cancelled/Rejected lifecycle - show it, and (when canActOnMeeting) let an
-  // authorized staff member action it right from this modal.
   const isMeetingRequest = Boolean(event?.clientId && event?.meetingStatus)
   const meetingMeta = MEETING_STATUS_META[event?.meetingStatus] || MEETING_STATUS_META.Pending
-  const meetingId = event?.masterId || event?.id
+  // Fix: only show Delete for real user-created CalendarEvents.
+  // System entries (holidays, birthdays, leaves, project dates, sundays) are
+  // readOnly and have prefixed ids — they cannot be deleted, so hide the button.
+  const isSystemEvent = Boolean(event?.readOnly)
+    || (baseId ? /^(holiday-|birthday-|leave-|project-|milestone-|task-deadline-)/.test(baseId) || baseId === 'sunday-recurring' : false)
+  const canDelete = !readOnly && isEdit && !isSystemEvent && Boolean(baseId)
+  const meetingId = baseId
 
   return (
     <Modal
@@ -130,12 +131,12 @@ export default function EventModal({ open, onClose, event, defaultStart, onSave,
         ) : (
           <div className="flex w-full flex-wrap items-center justify-between gap-2">
             <div className="flex flex-wrap items-center gap-2">
-              {isEdit ? (
+              {canDelete ? (
                 <Button
                   variant="ghost"
                   className="text-danger hover:bg-danger/10"
                   icon={FiTrash2}
-                  onClick={() => onDelete?.(event?.masterId || event?.id)}
+                  onClick={() => onDelete?.(baseId)}
                 >
                   Delete
                 </Button>

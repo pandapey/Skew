@@ -79,11 +79,6 @@ export const employeeApi = {
   deleteSelfDocument: async (docId) => apiClient.delete(`/employees/me/documents/${docId}`),
   documentUrl: (id, docId) => `/employees/${id}/documents/${docId}`,
 }
-export const attendanceService = resource('/attendance')
-export const leaveService = resource('/leaves')
-export const projectService = resource('/projects')
-export const taskService = resource('/tasks')
-export const financeService = resource('/transactions')
 
 export const announcementApi = {
 

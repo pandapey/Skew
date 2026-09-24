@@ -63,15 +63,15 @@ export default function AttendanceReports() {
 
   return (
     <div>
-      <PageHeader title="Attendance Reports" subtitle="Monthly trends, department analytics and daily records." />
+      <PageHeader title="Attendance Reports" subtitle={`Top KPIs are for today (${todayLabel}). Below: monthly trends and daily records.`} />
 
       {}
       <div className="mb-4 grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-5">
         <StatCard label="Employees" value={stats.totalEmployees ?? '—'} icon={FiUsers} />
-        <StatCard label="Present" value={stats.present ?? '—'} icon={FiUserCheck} tone="success" />
-        <StatCard label="Absent" value={stats.absent ?? '—'} icon={FiUserX} tone="danger" />
-        <StatCard label="Late" value={stats.late ?? '—'} icon={FiAlertCircle} tone="warning" />
-        <StatCard label="Rate" value={`${stats.attendanceRate ?? 0}%`} icon={FiTrendingUp} tone="primary" />
+        <StatCard label="Today's Present" value={stats.present ?? '—'} icon={FiUserCheck} tone="success" />
+        <StatCard label="Today's Absent" value={stats.absent ?? '—'} icon={FiUserX} tone="danger" />
+        <StatCard label="Today's Late" value={stats.late ?? '—'} icon={FiAlertCircle} tone="warning" />
+        <StatCard label="Today's Rate" value={`${stats.attendanceRate ?? 0}%`} icon={FiTrendingUp} tone="primary" />
       </div>
 
       {}

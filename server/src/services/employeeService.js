@@ -3,7 +3,7 @@ import { Employee } from '../models/Employee.js'
 import mongoose from 'mongoose'
 import { ApiError } from '../utils/asyncHandler.js'
 import { scalarOrNull, escapeRegex, clampLimit, clampPage } from '../utils/query.js'
-import { linkEmployeeToUser, deleteLinkedUser } from '../services/identityLink.js'
+import { linkEmployeeToUser, deleteLinkedUser } from './identityLink.js'
 import { saveBufferToGridFS, deleteGridFSFile, isGridFsId, extractGridFsId } from '../utils/mongoStorage.js'
 import { computeTodayStatusMap, ATT_STATUS_NOT_MARKED } from '../utils/attendanceStatus.js'
 

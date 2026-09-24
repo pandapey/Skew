@@ -42,7 +42,7 @@ MongoDB collections (63) — users, employees, projects, clients, finance, crm, 
 ## 📋 Prerequisites
 
 - **Node.js** 18+ (verified on Node 24)
-- **MongoDB** 5.0+ — local Community Server or MongoDB Atlas. Local dev uses `mongodb+srv://teammate282024_db_user:LJczRHTLAxg5itd2@cluster0.aqys1ru.mongodb.net/Skew?appName=Cluster0`.
+- **MongoDB** 5.0+ — local Community Server or MongoDB Atlas. Set it via `MONGO_URI` in `server/.env`.
 
 ---
 
@@ -54,7 +54,7 @@ Copy `server/.env.example` to `server/.env`:
 
 ```
 PORT=5000
-MONGO_URI=mongodb+srv://teammate282024_db_user:LJczRHTLAxg5itd2@cluster0.aqys1ru.mongodb.net/Skew?appName=Cluster0
+MONGO_URI=mongodb+srv://<user>:<password>@<cluster>/Skew?appName=Cluster0
 JWT_SECRET=change_this_to_a_long_random_secret
 JWT_REFRESH_SECRET=change_this_to_another_long_random_secret
 JWT_EXPIRES_IN=1d

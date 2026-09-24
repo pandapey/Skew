@@ -389,30 +389,52 @@ export const attendanceService = {
   async stats(query = {}) {
     const date = query.date || today()
     const records = await Attendance.find({ date }).lean()
-    const count = (s) => records.filter((r) => r.status === s).length
-    const present = count('Present'), late = count('Late'), earlyExit = count('Early Exit')
-    const absent = count('Absent'), onLeave = count('On Leave')
+    const rawCount = (s) => records.filter((r) => r.status === s).length
+    const rawPresent = rawCount('Present'), rawLate = rawCount('Late'), rawEarlyExit = rawCount('Early Exit')
+    const rawAbsent = rawCount('Absent')
     const totalOvertime = 0
     const avgHours = +(records.reduce((s, r) => s + (r.workingHours || 0), 0) / (records.length || 1)).toFixed(1)
 
-    const deptMap = {}
-    records.forEach((r) => {
-      deptMap[r.department] ??= { name: r.department, present: 0, absent: 0, late: 0 }
-      if (r.status === 'Present') deptMap[r.department].present++
-      else if (r.status === 'Absent' || r.status === 'On Leave') deptMap[r.department].absent++
-      else if (r.status === 'Late') deptMap[r.department].late++
-    })
-
     const staffUsers = await User.find({ role: { $in: ['Employee', 'Manager'] } })
-      .select('name role shift status -_id').lean()
+      .select('name empCode department role shift status -_id').lean()
     const statusMap = await computeTodayStatusMap({
       date, now: new Date(),
       subjects: staffUsers.map((u) => ({
-        name: u.name, empCode: '', shift: u.shift, inactive: u.status !== 'Active',
+        name: u.name, empCode: u.empCode || '', shift: u.shift, inactive: u.status !== 'Active',
       })),
     })
-    const statusOf = (u) => statusMap.byName.get(u.name) || ATT_STATUS_NOT_MARKED
-    const countStatus = (s) => staffUsers.filter((u) => statusOf(u) === s).length
+    // Effective status per user (prefers raw record, else computes
+    // Absent / On Leave / Not Marked — absent days never create records).
+    // Match by empCode first (survives renames), then name — same as dayRecords.
+    const statusOf = (u) => {
+      if (u.empCode && statusMap.byEmpCode.get(u.empCode)) return statusMap.byEmpCode.get(u.empCode)
+      return statusMap.byName.get(u.name) || ATT_STATUS_NOT_MARKED
+    }
+    const activeUsers = staffUsers.filter((u) => u.status === 'Active')
+    const countActive = (s) => activeUsers.filter((u) => statusOf(u) === s).length
+
+    // Single source of truth: ALL KPIs from effective status, not raw records.
+    // (Raw `present` over-counts stale records of inactive/ex-employees and
+    // under-counts when names were renamed; raw also misses computed Absent.)
+    const present = countActive(ATT_STATUS_PRESENT)
+    const late = countActive(ATT_STATUS_LATE)
+    const earlyExit = countActive(ATT_STATUS_EARLY_EXIT)
+    const effectiveAbsent = countActive(ATT_STATUS_ABSENT)
+    const effectiveOnLeave = countActive(ATT_STATUS_ON_LEAVE)
+    const notMarked = countActive(ATT_STATUS_NOT_MARKED)
+
+    // Department breakdown from effective status (was raw-records-only, so it
+    // missed computed Absent, Early Exit, and employees with no record yet).
+    const recDeptByName = new Map(records.map((r) => [r.employee, r.department]))
+    const deptMap = {}
+    activeUsers.forEach((u) => {
+      const dept = u.department || recDeptByName.get(u.name) || 'Unassigned'
+      deptMap[dept] ??= { name: dept, present: 0, absent: 0, late: 0 }
+      const st = statusOf(u)
+      if (st === ATT_STATUS_PRESENT || st === ATT_STATUS_EARLY_EXIT) deptMap[dept].present += 1
+      else if (st === ATT_STATUS_ABSENT || st === ATT_STATUS_ON_LEAVE) deptMap[dept].absent += 1
+      else if (st === ATT_STATUS_LATE) deptMap[dept].late += 1
+    })
 
     // Attendance by role — use effective (computed) status so Absent / Late / On Leave
     // are correct even when no raw Attendance record exists (absent never creates one).
@@ -432,13 +454,10 @@ export const attendanceService = {
         else if (st === ATT_STATUS_ABSENT) roleMap[role].absent += 1
       })
 
-    const headcount = staffUsers.filter((u) => u.status === 'Active').length
-    const effectiveAbsent = countStatus(ATT_STATUS_ABSENT)
-    const effectiveOnLeave = countStatus(ATT_STATUS_ON_LEAVE)
-    const notMarked = countStatus(ATT_STATUS_NOT_MARKED)
+    const headcount = activeUsers.length
     const markedPresent = present + late + earlyExit
     const expected = Math.max(0, headcount - effectiveOnLeave - notMarked)
-    const unmarkedAbsent = Math.max(0, effectiveAbsent - absent)
+    const unmarkedAbsent = Math.max(0, effectiveAbsent - rawAbsent)
     const totalEmployees = headcount || records.length
 
     const monthPrefix = String(date).slice(0, 7)
@@ -508,12 +527,13 @@ export const attendanceService = {
       totalEmployees,
       present, late, earlyExit, onLeave: effectiveOnLeave,
       absent: effectiveAbsent,
-      absentMarked: absent,
+      absentMarked: rawAbsent,
+      presentMarked: rawPresent, lateMarked: rawLate, earlyExitMarked: rawEarlyExit,
       absentUnmarked: unmarkedAbsent,
       notMarked,
       totalRecords: records.length,
       totalOvertime, avgHours,
-      attendanceRate: Math.round(markedPresent / (expected || 1) * 100),
+      attendanceRate: Math.min(100, Math.round(markedPresent / (expected || 1) * 100)),
       byDepartment: Object.values(deptMap),
       monthlyTrend,
       hoursTrend,

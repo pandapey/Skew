@@ -1,4 +1,3 @@
-import mongoose from 'mongoose'
 import { asyncHandler, ApiError } from '../utils/asyncHandler.js'
 import { scalarOrNull, escapeRegex, clampLimit, clampPage } from '../utils/query.js'
 import { User, GENDERS, ROLES } from '../models/User.js'

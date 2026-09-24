@@ -83,7 +83,6 @@ const AdminDbHealth = lazy(() => import('@/pages/admin/DatabaseHealth'))
 const AdminAnalytics = lazy(() => import('@/pages/admin/Analytics'))
 const Profile = lazy(() => import('@/pages/Profile'))
 const Chat = lazy(() => import('@/features/chat/ChatPage'))
-const Search = lazy(() => import('@/pages/Search'))
 
 const ClientDashboard = lazy(() => import('@/features/client/ClientDashboard'))
 const ClientProjects = lazy(() => import('@/features/client/ClientProjects'))
@@ -249,7 +248,6 @@ export const router = createBrowserRouter([
         ],
       },
       route('/profile', Profile),
-      route('/search', Search),
     ],
   },
 

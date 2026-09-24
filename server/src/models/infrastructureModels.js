@@ -52,7 +52,9 @@ hostingSchema.index({ expiresOn: 1 })
 
 const registrarSchema = new Schema(
   {
-    name: { type: String, required: true, trim: true, maxlength: 120, unique: true },
+    // NOTE: uniqueness is enforced by the case-insensitive index below
+    // (do NOT add `unique: true` here — it would create a duplicate index on { name: 1 })
+    name: { type: String, required: true, trim: true, maxlength: 120 },
   },
   opts
 )

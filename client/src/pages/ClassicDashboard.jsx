@@ -23,7 +23,8 @@ export default function ClassicDashboard() {
   const hideRevenueChart = isManager
   const revenueSideIsMeetings = isAdmin
   const attendanceFullWidth = isAdmin || isManager
-  const hideBottomRow = isAdmin
+  const hideBottomRow = isAdmin || isManager
+  const hidePersonalWidgets = isAdmin || isManager
   const { data, isLoading } = useQuery({ queryKey: ['dashboard'], queryFn: dashboardService.stats })
 
   const quickActions = [
@@ -150,7 +151,7 @@ export default function ClassicDashboard() {
           )}
         </GlassChartContainer>
 
-        {!isAdmin && (
+        {!hidePersonalWidgets && (
           <div className="space-y-4">{quickActionsWidget}</div>
         )}
       </div>
@@ -216,7 +217,7 @@ export default function ClassicDashboard() {
         </GlassWidget>}
       </div>}
 
-      {!isAdmin && <DateTimeWidget />}
+      {!hidePersonalWidgets && <DateTimeWidget />}
     </div>
   )
 }

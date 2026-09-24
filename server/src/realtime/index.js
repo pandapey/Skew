@@ -28,14 +28,13 @@ async function setUserOnline(userId, isOnline) {
       }
       const fresh = await (await import('../models/chatModels.js')).UserPresence.findOne({ user: userId }).lean()
       isOnline = !!fresh?.isOnline && (fresh.socketCount || 0) > 0
-      if (!isOnline) {
-        // ensure offline
-      } else {
-        // still online due to other sockets, don't emit offline
+      if (isOnline) {
+        // Still online via other sockets — refresh in-memory map, don't emit offline
         presenceMap.set(String(userId), { isOnline: true, lastSeen: new Date(), count: fresh.socketCount })
         if (io) io.to('global').emit('presence:update', { userId: String(userId), isOnline: true, lastSeen: new Date() })
         return
       }
+      // Otherwise fall through to mark offline below
     }
   } catch {}
   // update in-memory map

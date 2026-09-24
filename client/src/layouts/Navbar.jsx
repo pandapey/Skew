@@ -1,7 +1,6 @@
-import { useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useDispatch, useSelector } from 'react-redux'
-import { FiMenu, FiMoon, FiSun, FiSearch, FiLogOut, FiUser, FiSettings } from 'react-icons/fi'
+import { FiMenu, FiMoon, FiSun, FiLogOut, FiUser, FiSettings } from 'react-icons/fi'
 import { toggleSidebar, toggleTheme } from '@/redux/slices/uiSlice'
 import { ROLES } from '@/constants'
 import { useAuth } from '@/hooks/useAuth'
@@ -15,14 +14,12 @@ export function Navbar() {
   const navigate = useNavigate()
   const { user, logout } = useAuth()
   const theme = useSelector((s) => s.ui.theme)
-  const searchRef = useRef(null)
 
   const handleLogout = () => {
     logout()
     navigate('/login')
   }
 
-  const goSearch = (q) => navigate('/search?q=' + encodeURIComponent(q))
   const isClient = user?.role === ROLES.CLIENT
   const canSeeSettings = user?.role === ROLES.ADMIN
 
@@ -40,25 +37,7 @@ export function Navbar() {
         {/* Brand mark — mobile only, where the sidebar (and its logo) is hidden */}
         <BrandLogo className="h-7 w-auto lg:hidden" alt="Company logo" />
 
-        {/* Global search (staff only) */}
-        {isClient ? (
-          <div className="flex-1" />
-        ) : (
-          <div className="relative hidden max-w-md flex-1 md:block">
-            <FiSearch className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
-            <input
-              ref={searchRef}
-              id="global-search"
-              name="q"
-              type="search"
-              autoComplete="off"
-              className="input pl-9 pr-4"
-              placeholder="Search employees, projects, clients…"
-              onKeyDown={(e) => e.key === 'Enter' && goSearch(e.target.value)}
-              aria-label="Global search"
-            />
-          </div>
-        )}
+        <div className="flex-1" />
 
         <div className="ml-auto flex items-center gap-1">
           {/* Theme toggle */}

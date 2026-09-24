@@ -3,7 +3,7 @@ import { User } from '../models/User.js'
 import { Conversation, Message, ChatBlock, UserPresence } from '../models/chatModels.js'
 import { FileItem } from '../models/fileModels.js'
 import { notifyUsersByEmail } from './notificationService.js'
-import { emitToUsers, getPresenceMap, isUserOnline } from '../realtime/index.js'
+import { getPresenceMap } from '../realtime/index.js'
 import { saveBufferToGridFS, isGridFsId, extractGridFsId } from '../utils/mongoStorage.js'
 import crypto from 'crypto'
 

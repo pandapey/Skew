@@ -1,6 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import dayjs from 'dayjs'
 import { FiUsers, FiArrowRight } from 'react-icons/fi'
 import { CardHeader, Avatar, Badge, Button, CardSkeleton, EmptyState } from '@/components/ui'
 import { GlassWidget } from '@/components/glass'
@@ -15,7 +14,10 @@ const SUMMARY = [
 
 export default function TeamAvailabilityWidget() {
   const navigate = useNavigate()
-  const today = dayjs().format('YYYY-MM-DD')
+  // Must match backend todayIST() + other attendance pages (Asia/Kolkata).
+  // dayjs() uses browser-local TZ, which is wrong for users/servers outside IST
+  // (UTC vs IST differ 5.5h — widget queried the wrong date → wrong count).
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
   const { data, isLoading } = useQuery({
     queryKey: ['attendance', 'day', today],
     queryFn: () => attendanceApi.dayRecords({ date: today }),

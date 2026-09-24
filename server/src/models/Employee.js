@@ -73,7 +73,7 @@ const bankSchema = new mongoose.Schema(
 
 const employeeSchema = new mongoose.Schema(
   {
-    empCode: { type: String, unique: true, index: true },
+    empCode: { type: String, unique: true },
     userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     name: { type: String, required: [true, 'Name is required'], trim: true, index: true },
     email: { type: String, required: [true, 'Email is required'], lowercase: true, trim: true },

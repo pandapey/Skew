@@ -1,16 +1,8 @@
-// PHASE: EMPLOYEE CHAT ATTACHMENT PRIVACY — backfill `source: 'chat'` on FileItem
-// records whose bytes live under /chat-uploads/ (i.e. attachments sent through
-// Chat BEFORE the source field existed). Idempotent: records already tagged, or
-// records that point into the general /uploads dir, are never touched.
-//
-// Without this migration those legacy chat attachments would keep showing up in
-// the general Files module after the exclusion filter lands.
-//
-// Run from server/:  node src/migrations/migrate-chat-file-source.js
 import mongoose from 'mongoose'
 import { FileItem } from '../models/fileModels.js'
 
-const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://teammate282024_db_user:tB6s8YoI4vraB045@cluster0.rrxovbt.mongodb.net/Skew?appName=Cluster0'
+const MONGO_URI = process.env.MONGO_URI
+if (!MONGO_URI) throw new Error('MONGO_URI is required (set it in server/.env)')
 
 await mongoose.connect(MONGO_URI, { serverSelectionTimeoutMS: 8000 })
 

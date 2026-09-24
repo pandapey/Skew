@@ -5,7 +5,6 @@ import cors from 'cors'
 import helmet from 'helmet'
 import rateLimit from 'express-rate-limit'
 import morgan from 'morgan'
-import dotenv from 'dotenv'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import mongoose from 'mongoose'
@@ -37,8 +36,6 @@ import {
   stopLeaveScheduler,
 } from './services/leaveScheduler.js'
 
-dotenv.config()
-
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const app = express()
 
@@ -57,7 +54,7 @@ app.options(/.*/, cors(corsOptions))
 app.use(express.json({ limit: '10mb' }))
 app.use(express.urlencoded({ extended: true, limit: '10mb' }))
 
-app.use(morgan('dev'))
+app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'))
 
 app.use(
   '/uploads',

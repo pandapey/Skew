@@ -157,7 +157,7 @@ export async function expireStaleRequests() {
   return due.length
 }
 
-async function assertDatesAreRequestable(user, from, to) {
+async function assertDatesAreRequestable(user, from, to, { forHourly = false } = {}) {
   const start = parseDate(from)
   const end = parseDate(to) || start
   if (!start || !end) throw new ApiError(422, 'Both a start and end date are required')
@@ -178,30 +178,49 @@ async function assertDatesAreRequestable(user, from, to) {
     date: { $gte: iso(start), $lte: iso(end) },
   }).select('date status checkIn checkInAt').lean()
 
-  const blocking = marked.filter(
-    (a) => a.checkIn || a.checkInAt || (a.status && a.status !== 'Not Marked'),
-  )
-  if (blocking.length) {
-    const dates = blocking.map((a) => a.date).sort()
-    const checkedIn = blocking.find((a) => a.checkIn || a.checkInAt)
-    if (checkedIn) {
+  if (forHourly) {
+    // Hourly permission is a short break *while at work* — a check-in /
+    // Present record must NOT block it. Only block if already on full leave.
+    const onLeave = marked.filter((a) => a.status === 'On Leave')
+    if (onLeave.length) {
+      const dates = onLeave.map((a) => a.date).sort()
       throw new ApiError(
         422,
-        `You already checked in on ${checkedIn.date}, so leave cannot be requested for that date.`,
+        `You are already marked On Leave for ${dates.join(', ')}. Hourly permission cannot be requested for a date that is already on full leave.`,
       )
     }
-    throw new ApiError(
-      422,
-      `Attendance has already been recorded for ${dates.join(', ')}. Leave cannot be requested for a date that is already accounted for.`,
+  } else {
+    const blocking = marked.filter(
+      (a) => a.checkIn || a.checkInAt || (a.status && a.status !== 'Not Marked'),
     )
+    if (blocking.length) {
+      const dates = blocking.map((a) => a.date).sort()
+      const checkedIn = blocking.find((a) => a.checkIn || a.checkInAt)
+      if (checkedIn) {
+        throw new ApiError(
+          422,
+          `You already checked in on ${checkedIn.date}, so leave cannot be requested for that date.`,
+        )
+      }
+      throw new ApiError(
+        422,
+        `Attendance has already been recorded for ${dates.join(', ')}. Leave cannot be requested for a date that is already accounted for.`,
+      )
+    }
   }
 
-  const clashes = await LeaveRequest.find({
+  const clashFilter = {
     ...who,
     status: { $in: ['Pending', 'Approved'] },
     from: { $lte: iso(end) },
     to: { $gte: iso(start) },
-  }).select('from to type status days').lean()
+  }
+  if (forHourly) {
+    // Multiple hourly permissions on the same date are allowed (up to the
+    // monthly hour allowance) — only full-day leaves clash with them.
+    clashFilter.requestKind = { $ne: 'Hourly Permission' }
+  }
+  const clashes = await LeaveRequest.find(clashFilter).select('from to type status days').lean()
 
   if (clashes.length) {
     const c = clashes[0]
@@ -386,7 +405,7 @@ export const leaveService = {
       )
     }
 
-    await assertDatesAreRequestable(user, date, date)
+    await assertDatesAreRequestable(user, date, date, { forHourly: true })
 
     const month = monthKeyOf(date)
     const used = await this.hourlyUsage(user.name, month, user.empCode)
